@@ -218,7 +218,7 @@ vi.mock("../../sandbox.js", () => ({
 }));
 
 vi.mock("../../session-tool-result-guard-wrapper.js", () => ({
-  guardSessionManager: () => hoisted.sessionManager,
+  guardSessionManager: (sessionManager: unknown) => sessionManager,
 }));
 
 vi.mock("../../pi-embedded-subscribe.js", () => ({

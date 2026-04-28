@@ -1,7 +1,10 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OpenClawConfig } from "../../../config/types.js";
 import { buildMemorySystemPromptAddition } from "../../../context-engine/delegate.js";
 import {
   clearMemoryPluginState,
@@ -29,6 +32,7 @@ import {
   buildEmbeddedSubscriptionParams,
   cleanupEmbeddedAttemptResources,
 } from "./attempt.subscription-cleanup.js";
+import { MidTurnPrecheckSignal } from "./midturn-precheck.js";
 
 const hoisted = getHoisted();
 const embeddedSessionId = "embedded-session";
@@ -37,6 +41,33 @@ const seedMessage = { role: "user", content: "seed", timestamp: 1 } as AgentMess
 const doneMessage = { role: "assistant", content: "done", timestamp: 2 } as unknown as AgentMessage;
 type AfterTurnPromptCacheCall = { runtimeContext?: { promptCache?: Record<string, unknown> } };
 type TrajectoryEvent = { type?: string; data?: Record<string, unknown> };
+type ToolResultGuardInstallParams = {
+  midTurnPrecheck?: {
+    enabled?: boolean;
+  };
+};
+
+type AgentWithOptionalTransform = {
+  transformContext?: (
+    messages: AgentMessage[],
+    signal: AbortSignal,
+  ) => AgentMessage[] | Promise<AgentMessage[]>;
+};
+
+async function runAgentTransformContext(session: {
+  agent: unknown;
+  messages: unknown[];
+}): Promise<void> {
+  const agent = session.agent as AgentWithOptionalTransform;
+  const transformContext = agent.transformContext;
+  if (typeof transformContext === "function") {
+    await transformContext.call(
+      agent,
+      session.messages as AgentMessage[],
+      new AbortController().signal,
+    );
+  }
+}
 
 function createTestContextEngine(params: Partial<AttemptContextEngine>): AttemptContextEngine {
   return {
@@ -768,5 +799,278 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
     expect(hoisted.releaseWsSessionMock).toHaveBeenCalledWith("embedded-session", {
       allowPool: false,
     });
+  });
+});
+
+describe("runEmbeddedAttempt safeguard mid-turn precheck", () => {
+  const sessionKey = "agent:main:guildchat:channel:midturn-precheck";
+  const tempPaths: string[] = [];
+
+  beforeEach(() => {
+    resetEmbeddedAttemptHarness();
+    clearMemoryPluginState();
+  });
+
+  afterEach(async () => {
+    await cleanupTempPaths(tempPaths);
+    clearMemoryPluginState();
+    vi.restoreAllMocks();
+  });
+
+  it("keeps the Pi tool-loop precheck disabled unless explicitly configured", async () => {
+    await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
+      sessionKey,
+      tempPaths,
+    });
+
+    expect(hoisted.installToolResultContextGuardMock).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        midTurnPrecheck: expect.anything(),
+      }),
+    );
+  });
+
+  it("passes mid-turn precheck settings to the Pi tool-result guard in safeguard mode", async () => {
+    await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
+      sessionKey,
+      tempPaths,
+      attemptOverrides: {
+        config: {
+          agents: {
+            defaults: {
+              compaction: {
+                mode: "safeguard",
+                midTurnPrecheck: {
+                  enabled: true,
+                },
+              },
+            },
+          },
+        } as OpenClawConfig,
+        contextTokenBudget: 4096,
+      },
+    });
+
+    expect(hoisted.installToolResultContextGuardMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        midTurnPrecheck: expect.objectContaining({
+          enabled: true,
+          contextTokenBudget: 4096,
+          reserveTokens: expect.any(Function),
+          getPrePromptMessageCount: expect.any(Function),
+        }),
+      }),
+    );
+  });
+
+  it("passes mid-turn precheck settings to the Pi tool-result guard in default mode", async () => {
+    await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
+      sessionKey,
+      tempPaths,
+      attemptOverrides: {
+        config: {
+          agents: {
+            defaults: {
+              compaction: {
+                mode: "default",
+                midTurnPrecheck: {
+                  enabled: true,
+                },
+              },
+            },
+          },
+        } as OpenClawConfig,
+      },
+    });
+
+    expect(
+      (
+        hoisted.installToolResultContextGuardMock.mock.calls.at(-1)?.[0] as
+          | ToolResultGuardInstallParams
+          | undefined
+      )?.midTurnPrecheck?.enabled,
+    ).toBe(true);
+  });
+
+  it("uses the default safeguard compaction mode when mid-turn precheck is enabled", async () => {
+    await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
+      sessionKey,
+      tempPaths,
+      attemptOverrides: {
+        config: {
+          agents: {
+            defaults: {
+              compaction: {
+                midTurnPrecheck: {
+                  enabled: true,
+                },
+              },
+            },
+          },
+        } as OpenClawConfig,
+      },
+    });
+
+    expect(
+      (
+        hoisted.installToolResultContextGuardMock.mock.calls.at(-1)?.[0] as
+          | ToolResultGuardInstallParams
+          | undefined
+      )?.midTurnPrecheck?.enabled,
+    ).toBe(true);
+  });
+
+  it("treats a configured compaction provider as safeguard mode for mid-turn precheck", async () => {
+    await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
+      sessionKey,
+      tempPaths,
+      attemptOverrides: {
+        config: {
+          agents: {
+            defaults: {
+              compaction: {
+                mode: "default",
+                provider: "custom-summarizer",
+                midTurnPrecheck: {
+                  enabled: true,
+                },
+              },
+            },
+          },
+        } as OpenClawConfig,
+      },
+    });
+
+    expect(
+      (
+        hoisted.installToolResultContextGuardMock.mock.calls.at(-1)?.[0] as
+          | ToolResultGuardInstallParams
+          | undefined
+      )?.midTurnPrecheck?.enabled,
+    ).toBe(true);
+  });
+
+  it("maps a mid-turn compact request onto existing precheck recovery", async () => {
+    hoisted.installToolResultContextGuardMock.mockImplementation((...args: unknown[]) => {
+      const params = args[0] as { agent?: AgentWithOptionalTransform };
+      if (params.agent) {
+        params.agent.transformContext = () => {
+          throw new MidTurnPrecheckSignal({
+            route: "compact_only",
+            estimatedPromptTokens: 9000,
+            promptBudgetBeforeReserve: 7000,
+            overflowTokens: 2000,
+            toolResultReducibleChars: 0,
+            effectiveReserveTokens: 1000,
+          });
+        };
+      }
+      return () => {};
+    });
+
+    const result = await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
+      sessionKey,
+      tempPaths,
+      attemptOverrides: {
+        config: {
+          agents: {
+            defaults: {
+              compaction: {
+                mode: "safeguard",
+                midTurnPrecheck: {
+                  enabled: true,
+                },
+              },
+            },
+          },
+        } as OpenClawConfig,
+      },
+      sessionPrompt: async (session) => {
+        await runAgentTransformContext(session);
+      },
+    });
+
+    expect(result.promptErrorSource).toBe("precheck");
+    expect(result.preflightRecovery).toEqual({ route: "compact_only" });
+    expect(String(result.promptError)).toContain("Context overflow");
+  });
+
+  it("handles truncate-only mid-turn recovery through the active session manager", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-midturn-precheck-session-"));
+    tempPaths.push(dir);
+    const sessionManager = SessionManager.create(dir, dir);
+    sessionManager.appendMessage({
+      role: "user",
+      content: "seed",
+      timestamp: 1,
+    });
+    sessionManager.appendMessage({
+      role: "toolResult",
+      toolCallId: "call_big",
+      toolName: "read",
+      content: [{ type: "text", text: "x".repeat(80_000) }],
+      isError: false,
+      timestamp: 2,
+    });
+    hoisted.sessionManagerOpenMock.mockReturnValue(sessionManager);
+    hoisted.installToolResultContextGuardMock.mockImplementation((...args: unknown[]) => {
+      const params = args[0] as { agent?: AgentWithOptionalTransform };
+      if (params.agent) {
+        params.agent.transformContext = () => {
+          throw new MidTurnPrecheckSignal({
+            route: "truncate_tool_results_only",
+            estimatedPromptTokens: 9000,
+            promptBudgetBeforeReserve: 7000,
+            overflowTokens: 2000,
+            toolResultReducibleChars: 70_000,
+            effectiveReserveTokens: 1000,
+          });
+        };
+      }
+      return () => {};
+    });
+
+    const result = await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
+      sessionKey,
+      tempPaths,
+      attemptOverrides: {
+        config: {
+          agents: {
+            defaults: {
+              compaction: {
+                mode: "safeguard",
+                midTurnPrecheck: {
+                  enabled: true,
+                },
+              },
+            },
+          },
+        } as OpenClawConfig,
+        contextTokenBudget: 100,
+      },
+      sessionMessages: [seedMessage],
+      sessionPrompt: async (session) => {
+        await runAgentTransformContext(session);
+      },
+    });
+
+    expect(result.promptError).toBeNull();
+    expect(result.promptErrorSource).toBeNull();
+    expect(result.preflightRecovery).toMatchObject({
+      route: "truncate_tool_results_only",
+      handled: true,
+      truncatedCount: expect.any(Number),
+    });
+    if (!result.preflightRecovery?.handled) {
+      throw new Error("expected handled truncate-only recovery");
+    }
+    expect(result.preflightRecovery.truncatedCount).toBeGreaterThan(0);
   });
 });

@@ -314,6 +314,7 @@ import { detectAndLoadPromptImages } from "./images.js";
 import { buildAttemptReplayMetadata } from "./incomplete-turn.js";
 import { resolveLlmIdleTimeoutMs, streamWithIdleTimeout } from "./llm-idle-timeout.js";
 import { resolveMessageMergeStrategy } from "./message-merge-strategy.js";
+import { isMidTurnPrecheckSignal } from "./midturn-precheck.js";
 import {
   PREEMPTIVE_OVERFLOW_ERROR_TEXT,
   shouldPreemptivelyCompactBeforePrompt,
@@ -1464,6 +1465,17 @@ export async function runEmbeddedAttempt(
         queueSessionsYieldInterruptMessage(activeSession);
       };
       if (!activeContextEngine || activeContextEngine.info.ownsCompaction !== true) {
+        const contextTokenBudgetForGuard = Math.max(
+          1,
+          Math.floor(params.contextTokenBudget ?? DEFAULT_CONTEXT_TOKENS),
+        );
+        const toolResultMaxCharsForGuard = resolveLiveToolResultMaxChars({
+          contextWindowTokens: contextTokenBudgetForGuard,
+          cfg: params.config,
+          agentId: sessionAgentId,
+        });
+        const midTurnPrecheckEnabled =
+          params.config?.agents?.defaults?.compaction?.midTurnPrecheck?.enabled === true;
         removeToolResultContextGuard = installToolResultContextGuard({
           agent: activeSession.agent,
           contextWindowTokens: Math.max(
@@ -1472,6 +1484,18 @@ export async function runEmbeddedAttempt(
               params.model.contextWindow ?? params.model.maxTokens ?? DEFAULT_CONTEXT_TOKENS,
             ),
           ),
+          ...(midTurnPrecheckEnabled
+            ? {
+                midTurnPrecheck: {
+                  enabled: true,
+                  contextTokenBudget: contextTokenBudgetForGuard,
+                  reserveTokens: () => settingsManager.getCompactionReserveTokens(),
+                  toolResultMaxChars: toolResultMaxCharsForGuard,
+                  getSystemPrompt: () => systemPromptText,
+                  getPrePromptMessageCount: () => prePromptMessageCount,
+                },
+              }
+            : {}),
         });
       } else {
         removeToolResultContextGuard = installContextEngineLoopHook({
@@ -2769,6 +2793,61 @@ export async function runEmbeddedAttempt(
             stripSessionsYieldArtifacts(activeSession);
             if (yieldMessage) {
               await persistSessionsYieldContextMessage(activeSession, yieldMessage);
+            }
+          } else if (isMidTurnPrecheckSignal(err)) {
+            const request = err.request;
+            const logMidTurnPrecheck = (route: string, extra?: string) => {
+              log.warn(
+                `[context-overflow-midturn-precheck] sessionKey=${params.sessionKey ?? params.sessionId} ` +
+                  `provider=${params.provider}/${params.modelId} route=${route} ` +
+                  `estimatedPromptTokens=${request.estimatedPromptTokens} ` +
+                  `promptBudgetBeforeReserve=${request.promptBudgetBeforeReserve} ` +
+                  `overflowTokens=${request.overflowTokens} ` +
+                  `toolResultReducibleChars=${request.toolResultReducibleChars} ` +
+                  `effectiveReserveTokens=${request.effectiveReserveTokens} ` +
+                  `${extra ? `${extra} ` : ""}` +
+                  `sessionFile=${params.sessionFile}`,
+              );
+            };
+            if (request.route === "truncate_tool_results_only") {
+              const contextTokenBudget = params.contextTokenBudget ?? DEFAULT_CONTEXT_TOKENS;
+              const toolResultMaxChars = resolveLiveToolResultMaxChars({
+                contextWindowTokens: contextTokenBudget,
+                cfg: params.config,
+                agentId: sessionAgentId,
+              });
+              const truncationResult = truncateOversizedToolResultsInSessionManager({
+                sessionManager,
+                contextWindowTokens: contextTokenBudget,
+                maxCharsOverride: toolResultMaxChars,
+                sessionFile: params.sessionFile,
+                sessionId: params.sessionId,
+                sessionKey: params.sessionKey,
+              });
+              if (truncationResult.truncated) {
+                preflightRecovery = {
+                  route: "truncate_tool_results_only",
+                  handled: true,
+                  truncatedCount: truncationResult.truncatedCount,
+                };
+                logMidTurnPrecheck(
+                  request.route,
+                  `handled=true truncatedCount=${truncationResult.truncatedCount}`,
+                );
+              } else {
+                preflightRecovery = { route: "compact_only" };
+                promptError = new Error(PREEMPTIVE_OVERFLOW_ERROR_TEXT);
+                promptErrorSource = "precheck";
+                logMidTurnPrecheck(
+                  "compact_only",
+                  `truncateFallbackReason=${truncationResult.reason ?? "unknown"}`,
+                );
+              }
+            } else {
+              preflightRecovery = { route: request.route };
+              promptError = new Error(PREEMPTIVE_OVERFLOW_ERROR_TEXT);
+              promptErrorSource = "precheck";
+              logMidTurnPrecheck(request.route);
             }
           } else {
             promptError = err;

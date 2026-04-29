@@ -9,11 +9,14 @@ export type MidTurnPrecheckRequest = {
   effectiveReserveTokens: number;
 };
 
+export const MID_TURN_PRECHECK_ERROR_MESSAGE =
+  "Context overflow: prompt too large for the model (mid-turn precheck).";
+
 export class MidTurnPrecheckSignal extends Error {
   readonly request: MidTurnPrecheckRequest;
 
   constructor(request: MidTurnPrecheckRequest) {
-    super("Context overflow: prompt too large for the model (mid-turn precheck).");
+    super(MID_TURN_PRECHECK_ERROR_MESSAGE);
     this.name = "MidTurnPrecheckSignal";
     this.request = request;
   }

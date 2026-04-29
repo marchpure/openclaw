@@ -4,9 +4,9 @@ import {
   CONTEXT_LIMIT_TRUNCATION_NOTICE,
   formatContextLimitTruncationNotice,
 } from "./context-truncation-notice.js";
+import { log } from "./logger.js";
 import { MidTurnPrecheckSignal, type MidTurnPrecheckRequest } from "./run/midturn-precheck.js";
 import { shouldPreemptivelyCompactBeforePrompt } from "./run/preemptive-compaction.js";
-import type { PreemptiveCompactionRoute } from "./run/preemptive-compaction.types.js";
 import {
   CHARS_PER_TOKEN_ESTIMATE,
   TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE,
@@ -35,6 +35,16 @@ type GuardableAgent = object;
 
 type GuardableAgentRecord = {
   transformContext?: GuardableTransformContext;
+};
+
+type MidTurnPrecheckOptions = {
+  enabled?: boolean;
+  contextTokenBudget: number;
+  reserveTokens: () => number;
+  toolResultMaxChars?: number;
+  getSystemPrompt?: () => string | undefined;
+  getPrePromptMessageCount?: () => number;
+  onMidTurnPrecheck?: (request: MidTurnPrecheckRequest) => void;
 };
 
 export { CONTEXT_LIMIT_TRUNCATION_NOTICE, formatContextLimitTruncationNotice };
@@ -207,7 +217,7 @@ function toMidTurnPrecheckRequest(
     return null;
   }
   return {
-    route: result.route as Exclude<PreemptiveCompactionRoute, "fits">,
+    route: result.route,
     estimatedPromptTokens: result.estimatedPromptTokens,
     promptBudgetBeforeReserve: result.promptBudgetBeforeReserve,
     overflowTokens: result.overflowTokens,
@@ -263,7 +273,6 @@ export function installContextEngineLoopHook(params: {
     if (!hasNewMessages) {
       return lastAssembledView ?? sourceMessages;
     }
-
     try {
       if (typeof contextEngine.afterTurn === "function") {
         await contextEngine.afterTurn({
@@ -327,14 +336,7 @@ export function installContextEngineLoopHook(params: {
 export function installToolResultContextGuard(params: {
   agent: GuardableAgent;
   contextWindowTokens: number;
-  midTurnPrecheck?: {
-    enabled?: boolean;
-    contextTokenBudget: number;
-    reserveTokens: () => number;
-    toolResultMaxChars?: number;
-    getSystemPrompt?: () => string | undefined;
-    getPrePromptMessageCount?: () => number;
-  };
+  midTurnPrecheck?: MidTurnPrecheckOptions;
 }): () => void {
   const contextWindowTokens = Math.max(1, Math.floor(params.contextWindowTokens));
   const maxContextChars = Math.max(
@@ -399,7 +401,15 @@ export function installToolResultContextGuard(params: {
           toolResultMaxChars: params.midTurnPrecheck.toolResultMaxChars,
         });
         const request = toMidTurnPrecheckRequest(precheck);
+        log.debug(
+          `[context-overflow-midturn-precheck] tool-result-guard check route=${precheck.route} ` +
+            `messages=${contextMessages.length} prePromptMessageCount=${prePromptMessageCount} ` +
+            `estimatedPromptTokens=${precheck.estimatedPromptTokens} ` +
+            `promptBudgetBeforeReserve=${precheck.promptBudgetBeforeReserve} ` +
+            `overflowTokens=${precheck.overflowTokens}`,
+        );
         if (request) {
+          params.midTurnPrecheck.onMidTurnPrecheck?.(request);
           throw new MidTurnPrecheckSignal(request);
         }
       }

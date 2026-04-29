@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { Message } from "@mariozechner/pi-ai";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../../config/types.js";
@@ -44,6 +45,7 @@ type TrajectoryEvent = { type?: string; data?: Record<string, unknown> };
 type ToolResultGuardInstallParams = {
   midTurnPrecheck?: {
     enabled?: boolean;
+    onMidTurnPrecheck?: (request: MidTurnPrecheckSignal["request"]) => void;
   };
 };
 
@@ -865,6 +867,40 @@ describe("runEmbeddedAttempt safeguard mid-turn precheck", () => {
     );
   });
 
+  it("does not pass mid-turn precheck settings when the context engine owns compaction", async () => {
+    await createContextEngineAttemptRunner({
+      contextEngine: {
+        ...createContextEngineBootstrapAndAssemble(),
+        info: {
+          ownsCompaction: true,
+        },
+      },
+      sessionKey,
+      tempPaths,
+      attemptOverrides: {
+        config: {
+          agents: {
+            defaults: {
+              compaction: {
+                mode: "safeguard",
+                midTurnPrecheck: {
+                  enabled: true,
+                },
+              },
+            },
+          },
+        } as OpenClawConfig,
+        contextTokenBudget: 4096,
+      },
+    });
+
+    expect(hoisted.installContextEngineLoopHookMock).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        midTurnPrecheck: expect.anything(),
+      }),
+    );
+  });
+
   it("passes mid-turn precheck settings to the Pi tool-result guard in default mode", async () => {
     await createContextEngineAttemptRunner({
       contextEngine: createContextEngineBootstrapAndAssemble(),
@@ -1001,6 +1037,59 @@ describe("runEmbeddedAttempt safeguard mid-turn precheck", () => {
     expect(String(result.promptError)).toContain("Context overflow");
   });
 
+  it("recovers when Pi converts the mid-turn signal into an assistant error", async () => {
+    hoisted.installToolResultContextGuardMock.mockImplementation((...args: unknown[]) => {
+      const params = args[0] as ToolResultGuardInstallParams;
+      params.midTurnPrecheck?.onMidTurnPrecheck?.({
+        route: "compact_only",
+        estimatedPromptTokens: 9000,
+        promptBudgetBeforeReserve: 7000,
+        overflowTokens: 2000,
+        toolResultReducibleChars: 0,
+        effectiveReserveTokens: 1000,
+      });
+      return () => {};
+    });
+
+    const syntheticPiError = {
+      role: "assistant",
+      content: [{ type: "text", text: "" }],
+      stopReason: "error",
+      errorMessage: "Context overflow: prompt too large for the model (mid-turn precheck).",
+      timestamp: 3,
+    } as unknown as AgentMessage;
+
+    const result = await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
+      sessionKey,
+      tempPaths,
+      attemptOverrides: {
+        config: {
+          agents: {
+            defaults: {
+              compaction: {
+                mode: "safeguard",
+                midTurnPrecheck: {
+                  enabled: true,
+                },
+              },
+            },
+          },
+        } as OpenClawConfig,
+      },
+      sessionMessages: [seedMessage],
+      sessionPrompt: async (session) => {
+        session.messages = [...session.messages, syntheticPiError];
+      },
+    });
+
+    expect(result.promptErrorSource).toBe("precheck");
+    expect(result.preflightRecovery).toEqual({ route: "compact_only" });
+    expect(result.messagesSnapshot).toEqual([seedMessage]);
+    expect(result.promptError).toBeInstanceOf(Error);
+    expect(String(result.promptError)).toContain("Context overflow");
+  });
+
   it("handles truncate-only mid-turn recovery through the active session manager", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-midturn-precheck-session-"));
     tempPaths.push(dir);
@@ -1072,5 +1161,103 @@ describe("runEmbeddedAttempt safeguard mid-turn precheck", () => {
       throw new Error("expected handled truncate-only recovery");
     }
     expect(result.preflightRecovery.truncatedCount).toBeGreaterThan(0);
+  });
+
+  it("handles swallowed truncate-only recovery and drops the synthetic Pi error", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-midturn-swallowed-session-"));
+    tempPaths.push(dir);
+    const sessionManager = SessionManager.create(dir, dir);
+    const seed = {
+      role: "user",
+      content: "seed",
+      timestamp: 1,
+    } satisfies Message;
+    const toolResult = {
+      role: "toolResult",
+      toolCallId: "call_big",
+      toolName: "read",
+      content: [{ type: "text", text: "x".repeat(80_000) }],
+      isError: false,
+      timestamp: 2,
+    } satisfies Message;
+    sessionManager.appendMessage(seed);
+    sessionManager.appendMessage(toolResult);
+    hoisted.sessionManagerOpenMock.mockReturnValue(sessionManager);
+    hoisted.installToolResultContextGuardMock.mockImplementation((...args: unknown[]) => {
+      const params = args[0] as ToolResultGuardInstallParams;
+      params.midTurnPrecheck?.onMidTurnPrecheck?.({
+        route: "truncate_tool_results_only",
+        estimatedPromptTokens: 9000,
+        promptBudgetBeforeReserve: 7000,
+        overflowTokens: 2000,
+        toolResultReducibleChars: 70_000,
+        effectiveReserveTokens: 1000,
+      });
+      return () => {};
+    });
+
+    const syntheticPiError = {
+      role: "assistant",
+      content: [{ type: "text", text: "" }],
+      api: "openai-completions",
+      provider: "openai",
+      model: "test-model",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: 0,
+        },
+      },
+      stopReason: "error",
+      errorMessage: "Context overflow: prompt too large for the model (mid-turn precheck).",
+      timestamp: 3,
+    } satisfies Message;
+    sessionManager.appendMessage(syntheticPiError);
+
+    const result = await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
+      sessionKey,
+      tempPaths,
+      attemptOverrides: {
+        config: {
+          agents: {
+            defaults: {
+              compaction: {
+                mode: "safeguard",
+                midTurnPrecheck: {
+                  enabled: true,
+                },
+              },
+            },
+          },
+        } as OpenClawConfig,
+        contextTokenBudget: 100,
+      },
+      sessionMessages: [seed],
+      sessionPrompt: async (session) => {
+        session.messages = [...session.messages, syntheticPiError];
+      },
+    });
+
+    expect(result.promptError).toBeNull();
+    expect(result.promptErrorSource).toBeNull();
+    expect(result.preflightRecovery).toMatchObject({
+      route: "truncate_tool_results_only",
+      handled: true,
+      truncatedCount: expect.any(Number),
+    });
+    expect(result.messagesSnapshot).toHaveLength(2);
+    expect(result.messagesSnapshot.at(-1)?.role).toBe("toolResult");
+    expect(JSON.stringify(result.messagesSnapshot)).not.toContain(
+      "prompt too large for the model (mid-turn precheck)",
+    );
   });
 });

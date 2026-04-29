@@ -110,6 +110,13 @@ export const pluginRegistrationContractCases = {
     requireDescribeImages: true,
     requireGenerateImage: true,
   },
+  opencode: {
+    pluginId: "opencode",
+    providerIds: ["opencode"],
+    mediaUnderstandingProviderIds: ["opencode"],
+    cliBackendIds: ["opencode-cli"],
+    requireDescribeImages: true,
+  },
   openrouter: {
     pluginId: "openrouter",
     providerIds: ["openrouter"],

@@ -301,6 +301,31 @@ export async function executePreparedCliRun(
             );
           }
           Object.assign(next, context.preparedBackend.env);
+          if (
+            systemPromptFile?.filePath &&
+            backend.systemPromptFileJsonEnv &&
+            backend.systemPromptFileJsonKey
+          ) {
+            let config: Record<string, unknown> = {};
+            const existing = next[backend.systemPromptFileJsonEnv];
+            if (typeof existing === "string" && existing.trim()) {
+              try {
+                const parsed = JSON.parse(existing) as unknown;
+                config =
+                  typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+                    ? { ...(parsed as Record<string, unknown>) }
+                    : {};
+              } catch {
+                config = {};
+              }
+            }
+            config[backend.systemPromptFileJsonKey] =
+              backend.systemPromptMode === "append" &&
+              Array.isArray(config[backend.systemPromptFileJsonKey])
+                ? [...config[backend.systemPromptFileJsonKey], systemPromptFile.filePath]
+                : [systemPromptFile.filePath];
+            next[backend.systemPromptFileJsonEnv] = JSON.stringify(config);
+          }
 
           // Never mark Claude CLI as host-managed. That marker routes runs into
           // Anthropic's separate host-managed usage tier instead of normal CLI

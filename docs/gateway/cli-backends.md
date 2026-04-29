@@ -161,6 +161,13 @@ model_instructions_file="..."`). Codex does not expose a Claude-style
 `--append-system-prompt` flag, so OpenClaw writes the assembled prompt to a
 temporary file for each fresh Codex CLI session.
 
+The bundled OpenCode `opencode-cli` backend uses `opencode run --format json`
+with `OPENCODE_CONFIG_CONTENT`. OpenClaw writes its assembled system prompt to
+a temporary instruction file, appends that file to OpenCode's `instructions`
+config, and injects the loopback MCP bridge under OpenCode's `mcp` config. Use
+model refs such as `opencode-cli/opencode/kimi-k2.6`; the right side is the
+OpenCode-native provider/model id passed to `--model`.
+
 The bundled Anthropic `claude-cli` backend receives the OpenClaw skills snapshot
 two ways: the compact OpenClaw skills catalog in the appended system prompt, and
 a temporary Claude Code plugin passed with `--plugin-dir`. The plugin contains

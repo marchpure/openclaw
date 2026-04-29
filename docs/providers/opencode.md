@@ -17,6 +17,11 @@ Both catalogs use the same OpenCode API key. OpenClaw keeps the runtime provider
 split so upstream per-model routing stays correct, but onboarding and docs treat them
 as one OpenCode setup.
 
+OpenClaw also bundles an `opencode-cli` backend for running the local OpenCode
+CLI through the shared CLI backend layer. That path uses `opencode run`, keeps
+OpenClaw's assembled system prompt in OpenCode `instructions`, and injects the
+OpenClaw MCP loopback bridge through `OPENCODE_CONFIG_CONTENT`.
+
 ## Getting started
 
 <Tabs>
@@ -107,6 +112,38 @@ as one OpenCode setup.
 ## Advanced configuration
 
 <AccordionGroup>
+  <Accordion title="OpenCode CLI backend">
+    Install and log in to the OpenCode CLI on the Gateway host, then select the
+    backend with an OpenCode-native model id:
+
+    ```bash
+    npm install -g opencode-ai
+    opencode providers
+    openclaw config set agents.defaults.model.primary "opencode-cli/opencode/kimi-k2.6"
+    ```
+
+    If `opencode` is not on the Gateway process `PATH`, set only the command
+    override:
+
+    ```json5
+    {
+      agents: {
+        defaults: {
+          cliBackends: {
+            "opencode-cli": {
+              command: "/usr/local/bin/opencode",
+            },
+          },
+        },
+      },
+    }
+    ```
+
+    The bundled backend uses `opencode run --format json`, `--model`,
+    `--session`, `--file`, and `OPENCODE_CONFIG_CONTENT`.
+
+  </Accordion>
+
   <Accordion title="API key aliases">
     `OPENCODE_ZEN_API_KEY` is also supported as an alias for `OPENCODE_API_KEY`.
   </Accordion>

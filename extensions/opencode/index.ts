@@ -7,6 +7,7 @@ import {
 } from "openclaw/plugin-sdk/provider-model-shared";
 import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 import { applyOpencodeZenConfig, OPENCODE_ZEN_DEFAULT_MODEL } from "./api.js";
+import { buildOpencodeCliBackend } from "./cli-backend.js";
 import { opencodeMediaUnderstandingProvider } from "./media-understanding-provider.js";
 
 const PROVIDER_ID = "opencode";
@@ -32,6 +33,7 @@ export default definePluginEntry({
   name: "OpenCode Zen Provider",
   description: "Bundled OpenCode Zen provider plugin",
   register(api) {
+    api.registerCliBackend(buildOpencodeCliBackend());
     api.registerProvider({
       id: PROVIDER_ID,
       label: "OpenCode Zen",

@@ -12,6 +12,7 @@ import { isRecord } from "./bundle-mcp-adapter-shared.js";
 import { findClaudeMcpConfigPath, injectClaudeMcpConfigArgs } from "./bundle-mcp-claude.js";
 import { injectCodexMcpConfigArgs } from "./bundle-mcp-codex.js";
 import { writeGeminiSystemSettings } from "./bundle-mcp-gemini.js";
+import { injectOpencodeMcpConfigEnv } from "./bundle-mcp-opencode.js";
 
 type PreparedCliBundleMcpConfig = {
   backend: CliBackendConfig;
@@ -116,6 +117,18 @@ async function prepareModeSpecificBundleMcpConfig(params: {
       mcpResumeHash,
       env: settings.env,
       cleanup: settings.cleanup,
+    };
+  }
+
+  if (params.mode === "opencode-config-content") {
+    return {
+      backend: params.backend,
+      mcpConfigHash,
+      mcpResumeHash,
+      env: injectOpencodeMcpConfigEnv({
+        config: params.mergedConfig,
+        env: params.env,
+      }),
     };
   }
 

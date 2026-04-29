@@ -4034,6 +4034,12 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                     systemPromptFileConfigKey: {
                       type: "string",
                     },
+                    systemPromptFileJsonEnv: {
+                      type: "string",
+                    },
+                    systemPromptFileJsonKey: {
+                      type: "string",
+                    },
                     systemPromptMode: {
                       anyOf: [
                         {

@@ -174,6 +174,49 @@ describe("shouldSkipLocalCliCredentialEpoch", () => {
     ).toBe(false);
   });
 
+  it("keeps JSON-env system prompt file enabled for OpenCode-style backends", async () => {
+    const { dir, sessionFile } = createSessionFile();
+    try {
+      const context = await prepareCliRunContext({
+        sessionId: "session-test",
+        sessionKey: "agent:main:test:opencode-json-env",
+        agentId: "main",
+        trigger: "user",
+        sessionFile,
+        workspaceDir: dir,
+        prompt: "hello",
+        provider: "opencode-cli",
+        model: "opencode/kimi-k2.6",
+        timeoutMs: 1_000,
+        runId: "run-opencode-json-env",
+        config: {
+          agents: {
+            defaults: {
+              cliBackends: {
+                "opencode-cli": {
+                  command: "opencode",
+                  args: ["run", "--format", "json"],
+                  input: "arg",
+                  systemPromptFileJsonEnv: "OPENCODE_CONFIG_CONTENT",
+                  systemPromptFileJsonKey: "instructions",
+                  systemPromptWhen: "first",
+                },
+              },
+            },
+          },
+        },
+      });
+
+      expect(context.systemPrompt).toContain("running inside OpenClaw");
+      expect(context.preparedBackend.backend.systemPromptFileJsonEnv).toBe(
+        "OPENCODE_CONFIG_CONTENT",
+      );
+      expect(context.preparedBackend.backend.systemPromptFileJsonKey).toBe("instructions");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("applies prompt-build hook context to Claude-style CLI preparation", async () => {
     const { dir, sessionFile } = createSessionFile();
     try {

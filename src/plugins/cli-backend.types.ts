@@ -16,7 +16,8 @@ export type PluginTextTransforms = {
 export type CliBundleMcpMode =
   | "claude-config-file"
   | "codex-config-overrides"
-  | "gemini-system-settings";
+  | "gemini-system-settings"
+  | "opencode-config-content";
 
 export type CliBackendPrepareExecutionContext = {
   config?: OpenClawConfig;
@@ -76,6 +77,7 @@ export type CliBackendPlugin = {
    * - Claude: `--strict-mcp-config --mcp-config`
    * - Codex: `-c mcp_servers=...`
    * - Gemini: system-level `settings.json`
+   * - OpenCode: `OPENCODE_CONFIG_CONTENT`
    */
   bundleMcpMode?: CliBundleMcpMode;
   /**

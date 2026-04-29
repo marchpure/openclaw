@@ -170,7 +170,8 @@ export function resolveSystemPromptUsage(params: {
   if (
     !params.backend.systemPromptArg?.trim() &&
     !params.backend.systemPromptFileArg?.trim() &&
-    !params.backend.systemPromptFileConfigKey?.trim()
+    !params.backend.systemPromptFileConfigKey?.trim() &&
+    !params.backend.systemPromptFileJsonKey?.trim()
   ) {
     return null;
   }
@@ -304,7 +305,8 @@ export async function writeCliSystemPromptFile(params: {
 }): Promise<{ filePath?: string; cleanup: () => Promise<void> }> {
   if (
     !params.backend.systemPromptFileArg?.trim() &&
-    !params.backend.systemPromptFileConfigKey?.trim()
+    !params.backend.systemPromptFileConfigKey?.trim() &&
+    !params.backend.systemPromptFileJsonKey?.trim()
   ) {
     return { cleanup: async () => {} };
   }

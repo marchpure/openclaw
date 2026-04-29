@@ -611,6 +611,8 @@ export const CliBackendSchema = z
     systemPromptFileArg: z.string().optional(),
     systemPromptFileConfigArg: z.string().optional(),
     systemPromptFileConfigKey: z.string().optional(),
+    systemPromptFileJsonEnv: z.string().optional(),
+    systemPromptFileJsonKey: z.string().optional(),
     systemPromptMode: z.union([z.literal("append"), z.literal("replace")]).optional(),
     systemPromptWhen: z
       .union([z.literal("first"), z.literal("always"), z.literal("never")])

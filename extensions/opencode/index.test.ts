@@ -1,4 +1,5 @@
 import {
+  capturePluginRegistration,
   registerProviderPlugin,
   requireRegisteredProvider,
 } from "openclaw/plugin-sdk/plugin-test-runtime";
@@ -7,6 +8,24 @@ import { describe, expect, it } from "vitest";
 import plugin from "./index.js";
 
 describe("opencode provider plugin", () => {
+  it("registers the opencode-cli backend with bundle MCP enabled", async () => {
+    const captured = capturePluginRegistration({ register: plugin.register });
+
+    expect(captured.cliBackends).toContainEqual(
+      expect.objectContaining({
+        id: "opencode-cli",
+        bundleMcp: true,
+        bundleMcpMode: "opencode-config-content",
+        config: expect.objectContaining({
+          command: "opencode",
+          modelArg: "--model",
+          systemPromptFileJsonEnv: "OPENCODE_CONFIG_CONTENT",
+          systemPromptFileJsonKey: "instructions",
+        }),
+      }),
+    );
+  });
+
   it("registers image media understanding through the OpenCode plugin", async () => {
     const { mediaProviders } = await registerProviderPlugin({
       plugin,

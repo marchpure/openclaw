@@ -134,6 +134,10 @@ export type CliBackendConfig = {
   systemPromptFileConfigArg?: string;
   /** Config override key used to pass a system prompt file. */
   systemPromptFileConfigKey?: string;
+  /** Env var containing JSON config to patch with the system prompt file. */
+  systemPromptFileJsonEnv?: string;
+  /** Top-level JSON config key that receives the system prompt file path array. */
+  systemPromptFileJsonKey?: string;
   /** System prompt behavior (append vs replace). */
   systemPromptMode?: "append" | "replace";
   /** When to send system prompt. */

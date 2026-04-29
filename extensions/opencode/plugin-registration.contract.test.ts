@@ -2,6 +2,7 @@ import { describePluginRegistrationContract } from "openclaw/plugin-sdk/plugin-t
 
 describePluginRegistrationContract({
   pluginId: "opencode",
+  cliBackendIds: ["opencode-cli"],
   providerIds: ["opencode"],
   mediaUnderstandingProviderIds: ["opencode"],
   requireDescribeImages: true,

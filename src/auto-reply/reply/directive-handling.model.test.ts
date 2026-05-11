@@ -59,6 +59,7 @@ import {
   clearRuntimeAuthProfileStoreSnapshots,
   replaceRuntimeAuthProfileStoreSnapshots,
 } from "../../agents/auth-profiles.js";
+import { clearAgentHarnesses, registerAgentHarness } from "../../agents/harness/registry.js";
 import type { ModelAliasIndex } from "../../agents/model-selection.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions.js";
@@ -156,6 +157,7 @@ function setDirectiveTestProviders(providers: ProviderPlugin[]): void {
 
 beforeEach(() => {
   setDirectiveTestProviders([]);
+  clearAgentHarnesses();
   clearRuntimeAuthProfileStoreSnapshots();
   replaceRuntimeAuthProfileStoreSnapshots([
     {
@@ -172,6 +174,7 @@ beforeEach(() => {
 
 afterEach(() => {
   setDirectiveTestProviders([]);
+  clearAgentHarnesses();
   clearRuntimeAuthProfileStoreSnapshots();
 });
 
@@ -575,6 +578,26 @@ describe("/model chat UX", () => {
     expect(sessionEntry.agentRuntimeOverride).toBe("codex");
   });
 
+  it("persists registered plugin runtime overrides and clears stale harness pins", async () => {
+    registerAgentHarness({
+      id: "custom-harness",
+      label: "Custom Harness",
+      supports: () => ({ supported: true }),
+      runAttempt: vi.fn() as never,
+    });
+
+    const { sessionEntry } = await persistModelDirectiveForTest({
+      command: "/model openai/gpt-4o --runtime custom-harness hello",
+      allowedModelKeys: ["openai/gpt-4o"],
+      sessionEntry: createSessionEntry({ agentHarnessId: "pi" }),
+    });
+
+    expect(sessionEntry.providerOverride).toBe("openai");
+    expect(sessionEntry.modelOverride).toBe("gpt-4o");
+    expect(sessionEntry.agentRuntimeOverride).toBe("custom-harness");
+    expect(sessionEntry.agentHarnessId).toBeUndefined();
+  });
+
   it("canonicalizes legacy Codex app-server runtime overrides during persistence", async () => {
     const { sessionEntry } = await persistModelDirectiveForTest({
       command: "/model openai/gpt-4o --runtime codex-app-server hello",
@@ -588,13 +611,14 @@ describe("/model chat UX", () => {
     const { sessionEntry } = await persistModelDirectiveForTest({
       command: "/model openai/gpt-4o --runtime default hello",
       allowedModelKeys: ["openai/gpt-4o"],
-      sessionEntry: createSessionEntry({ agentRuntimeOverride: "codex" }),
+      sessionEntry: createSessionEntry({ agentHarnessId: "codex", agentRuntimeOverride: "codex" }),
       provider: "openai",
       model: "gpt-4o",
       initialModelLabel: "openai/gpt-4o",
     });
 
     expect(sessionEntry.agentRuntimeOverride).toBeUndefined();
+    expect(sessionEntry.agentHarnessId).toBeUndefined();
   });
 
   it("ignores runtime overrides that do not belong to the selected provider", async () => {

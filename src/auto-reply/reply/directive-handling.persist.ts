@@ -5,6 +5,7 @@ import {
 } from "../../agents/agent-scope.js";
 import { resolveContextTokensForModel } from "../../agents/context.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../../agents/defaults.js";
+import { listAgentHarnessIds } from "../../agents/harness/registry.js";
 import type { ModelCatalogEntry } from "../../agents/model-catalog.js";
 import { listLegacyRuntimeModelProviderAliases } from "../../agents/model-runtime-aliases.js";
 import { normalizeProviderId, type ModelAliasIndex } from "../../agents/model-selection.js";
@@ -32,6 +33,11 @@ export type PersistedThinkingLevelRemap = {
 };
 
 const MODEL_RUNTIME_CLEAR_VALUES = new Set(["auto", "default"]);
+
+function resolveRegisteredAgentHarnessRuntime(runtime: string): string | undefined {
+  const normalized = normalizeProviderId(runtime);
+  return listAgentHarnessIds().find((id) => normalizeProviderId(id) === normalized);
+}
 
 function resolveModelRuntimeOverride(params: {
   rawRuntime?: string;
@@ -65,7 +71,20 @@ function resolveModelRuntimeOverride(params: {
     }
   }
 
+  const registeredHarnessRuntime = resolveRegisteredAgentHarnessRuntime(runtime);
+  if (registeredHarnessRuntime) {
+    return { kind: "set", runtime: registeredHarnessRuntime };
+  }
+
   return { kind: "invalid", runtime: rawRuntime };
+}
+
+function clearPinnedAgentHarness(entry: SessionEntry): boolean {
+  if (!entry.agentHarnessId) {
+    return false;
+  }
+  delete entry.agentHarnessId;
+  return true;
 }
 
 export async function persistInlineDirectives(params: {
@@ -255,11 +274,13 @@ export async function persistInlineDirectives(params: {
             delete sessionEntry.agentRuntimeOverride;
             updated = true;
           }
+          updated = clearPinnedAgentHarness(sessionEntry) || updated;
         } else if (runtimeOverride?.kind === "set") {
           if (sessionEntry.agentRuntimeOverride !== runtimeOverride.runtime) {
             sessionEntry.agentRuntimeOverride = runtimeOverride.runtime;
             updated = true;
           }
+          updated = clearPinnedAgentHarness(sessionEntry) || updated;
         } else if (runtimeOverride?.kind === "invalid") {
           enqueueSystemEvent(
             `Ignored unsupported runtime ${runtimeOverride.runtime} for ${modelResolution.modelSelection.provider}.`,

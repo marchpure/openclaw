@@ -19,6 +19,11 @@ directly. Without an HTTP route, the plugin falls back to the VEFaaS WebShell
 endpoint returned by `GenWebshellEndpoint`, so `exec`, `read`, `write`, `edit`,
 and `apply_patch` can still run through the remote shell.
 
+The same plugin can also register `vefaas-opencode`, an ACP runtime backend that
+starts OpenCode ACP inside a VEFaaS sandbox. OpenClaw still uses its normal ACP
+control plane and task routing, while the OpenCode process and code tools run in
+the remote VEFaaS workspace.
+
 ## Prerequisites
 
 - VEFaaS sandbox plugin installed with `openclaw plugins install @openclaw/vefaas-sandbox`
@@ -80,6 +85,53 @@ Verify the runtime:
 ```bash
 openclaw sandbox list
 openclaw sandbox explain
+```
+
+## Run OpenCode through ACP on VEFaaS
+
+Enable `opencodeAcp` when you want `/acp spawn opencode` or
+`sessions_spawn({ runtime: "acp", agentId: "opencode" })` to run OpenCode in a
+VEFaaS sandbox instead of on the Gateway host:
+
+```json5
+{
+  acp: {
+    enabled: true,
+    backend: "vefaas-opencode",
+    defaultAgent: "opencode",
+    allowedAgents: ["opencode"],
+  },
+  plugins: {
+    entries: {
+      "vefaas-sandbox": {
+        enabled: true,
+        config: {
+          functionId: "<VEFAAS_SANDBOX_FUNCTION_ID>",
+          region: "cn-beijing",
+          opencodeAcp: {
+            enabled: true,
+            env: {
+              OPENAI_API_KEY: "${OPENAI_API_KEY}",
+              OPENAI_BASE_URL: "${OPENAI_BASE_URL}",
+            },
+          },
+        },
+      },
+    },
+  },
+}
+```
+
+The plugin writes a local stdio proxy command for ACPX. ACPX owns ACP session
+state, background task delivery, cancellation, and bindings. The proxy creates
+or reuses the VEFaaS sandbox, opens a WebShell endpoint, starts `opencode acp`
+inside `opencodeAcp.workspaceDir`, and forwards only ACP JSON-RPC lines between
+OpenClaw and the remote process.
+
+Use the ACP runbook after the backend is enabled:
+
+```text
+/acp spawn opencode --bind here
 ```
 
 ## Configure direct HTTP access
@@ -151,29 +203,34 @@ OpenClaw sandbox name as `SessionId` and metadata. It uses `ListSandboxes` plus
 All VEFaaS plugin config lives under
 `plugins.entries["vefaas-sandbox"].config`:
 
-| Key                       | Type                  | Default                        | Description                                                    |
-| ------------------------- | --------------------- | ------------------------------ | -------------------------------------------------------------- |
-| `mode`                    | `"remote"`            | `"remote"`                     | Workspace mode. Only `remote` is supported.                    |
-| `functionId`              | `string`              | -                              | Existing VEFaaS sandbox function id.                           |
-| `functionName`            | `string`              | `"openclaw-vefaas-sandbox"`    | Function name to create or reuse when `functionId` is omitted. |
-| `accessKeyId`             | `SecretRef` or string | env fallback                   | VEFaaS control-plane access key.                               |
-| `secretAccessKey`         | `SecretRef` or string | env fallback                   | VEFaaS control-plane secret key.                               |
-| `sessionToken`            | `SecretRef` or string | -                              | Optional temporary credential token.                           |
-| `region`                  | `string`              | -                              | VEFaaS region, for example `cn-beijing`.                       |
-| `endpoint`                | `string`              | -                              | Optional VEFaaS control-plane endpoint override.               |
-| `image`                   | `string`              | VEFaaS public all-in-one image | Sandbox image.                                                 |
-| `imageCommand`            | `string`              | `"/opt/gem/run.sh"`            | Container command for sandbox instances.                       |
-| `port`                    | `number`              | `8080`                         | All-in-One HTTP port.                                          |
-| `remoteWorkspaceDir`      | `string`              | `"/workspace"`                 | Primary writable workspace inside the sandbox.                 |
-| `remoteAgentWorkspaceDir` | `string`              | `"/agent"`                     | Agent workspace mirror path.                                   |
-| `ttlSeconds`              | `number`              | `3600`                         | Requested sandbox lifetime.                                    |
-| `timeoutSeconds`          | `number`              | `120`                          | SDK, shell, and file operation timeout.                        |
-| `resources`               | `object`              | -                              | CPU, memory, and GPU request fields.                           |
-| `network`                 | `object`              | -                              | Reserved for network placement and egress policy.              |
-| `access.baseUrl`          | `string`              | -                              | Optional direct HTTP route to All-in-One APIs.                 |
-| `access.apiKey`           | `SecretRef` or string | -                              | Optional API key sent as `Authorization: Bearer`.              |
-| `access.headers`          | object                | -                              | Extra HTTP headers for the All-in-One route.                   |
-| `env`                     | object                | -                              | Sandbox instance environment overrides.                        |
+| Key                        | Type                  | Default                        | Description                                                    |
+| -------------------------- | --------------------- | ------------------------------ | -------------------------------------------------------------- |
+| `mode`                     | `"remote"`            | `"remote"`                     | Workspace mode. Only `remote` is supported.                    |
+| `functionId`               | `string`              | -                              | Existing VEFaaS sandbox function id.                           |
+| `functionName`             | `string`              | `"openclaw-vefaas-sandbox"`    | Function name to create or reuse when `functionId` is omitted. |
+| `accessKeyId`              | `SecretRef` or string | env fallback                   | VEFaaS control-plane access key.                               |
+| `secretAccessKey`          | `SecretRef` or string | env fallback                   | VEFaaS control-plane secret key.                               |
+| `sessionToken`             | `SecretRef` or string | -                              | Optional temporary credential token.                           |
+| `region`                   | `string`              | -                              | VEFaaS region, for example `cn-beijing`.                       |
+| `endpoint`                 | `string`              | -                              | Optional VEFaaS control-plane endpoint override.               |
+| `image`                    | `string`              | VEFaaS public all-in-one image | Sandbox image.                                                 |
+| `imageCommand`             | `string`              | `"/opt/gem/run.sh"`            | Container command for sandbox instances.                       |
+| `port`                     | `number`              | `8080`                         | All-in-One HTTP port.                                          |
+| `remoteWorkspaceDir`       | `string`              | `"/workspace"`                 | Primary writable workspace inside the sandbox.                 |
+| `remoteAgentWorkspaceDir`  | `string`              | `"/agent"`                     | Agent workspace mirror path.                                   |
+| `ttlSeconds`               | `number`              | `3600`                         | Requested sandbox lifetime.                                    |
+| `timeoutSeconds`           | `number`              | `120`                          | SDK, shell, and file operation timeout.                        |
+| `resources`                | `object`              | -                              | CPU, memory, and GPU request fields.                           |
+| `network`                  | `object`              | -                              | Reserved for network placement and egress policy.              |
+| `access.baseUrl`           | `string`              | -                              | Optional direct HTTP route to All-in-One APIs.                 |
+| `access.apiKey`            | `SecretRef` or string | -                              | Optional API key sent as `Authorization: Bearer`.              |
+| `access.headers`           | object                | -                              | Extra HTTP headers for the All-in-One route.                   |
+| `opencodeAcp.enabled`      | `boolean`             | `false`                        | Register ACP backend `vefaas-opencode`.                        |
+| `opencodeAcp.command`      | `string`              | `"opencode"`                   | Remote ACP command inside the sandbox.                         |
+| `opencodeAcp.args`         | `string[]`            | `["acp"]`                      | Remote ACP command arguments.                                  |
+| `opencodeAcp.workspaceDir` | `string`              | `remoteWorkspaceDir`           | Remote cwd for OpenCode ACP.                                   |
+| `opencodeAcp.env`          | object                | -                              | Extra environment variables for the OpenCode ACP process.      |
+| `env`                      | object                | -                              | Sandbox instance environment overrides.                        |
 
 Sandbox-level settings (`mode`, `scope`, `workspaceAccess`) are configured under
 `agents.defaults.sandbox` as with any backend. See
@@ -188,6 +245,9 @@ Sandbox-level settings (`mode`, `scope`, `workspaceAccess`) are configured under
   first seed.
 - WebShell fallback runs through an interactive shell transport. Direct
   `access.baseUrl` HTTP mode is recommended for sustained production traffic.
+- `vefaas-opencode` uses WebShell stdio bridging because ACP is a long-lived
+  stdio protocol. Keep OpenCode ACP stdout JSON-only; non-JSON startup banners
+  are filtered by the proxy, but provider debug logs should go to stderr.
 - The plugin does not create API Gateway or custom HTTP route resources. Create
   that route outside OpenClaw when you want direct All-in-One HTTP access.
 

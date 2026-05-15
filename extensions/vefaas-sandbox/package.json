@@ -8,6 +8,7 @@
   },
   "type": "module",
   "dependencies": {
+    "acpx": "0.7.0",
     "@volcengine/vefaas": "1.0.5",
     "zod": "4.4.3"
   },
@@ -33,6 +34,10 @@
         {
           "source": "./src/exec-shim.mjs",
           "output": "src/exec-shim.mjs"
+        },
+        {
+          "source": "./src/opencode-acp-proxy.mjs",
+          "output": "src/opencode-acp-proxy.mjs"
         }
       ]
     },

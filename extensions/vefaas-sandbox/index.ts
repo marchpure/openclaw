@@ -1,5 +1,6 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { registerSandboxBackend } from "openclaw/plugin-sdk/sandbox";
+import { createVefaasOpencodeAcpService } from "./src/acp-service.js";
 import {
   createVefaasSandboxBackendFactory,
   createVefaasSandboxBackendManager,
@@ -24,5 +25,10 @@ export default definePluginEntry({
         pluginConfig,
       }),
     });
+    api.registerService(
+      createVefaasOpencodeAcpService({
+        pluginConfig,
+      }),
+    );
   },
 });

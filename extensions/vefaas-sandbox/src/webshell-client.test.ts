@@ -31,7 +31,7 @@ class FakeWebSocket {
         this.emit("message", {
           data: JSON.stringify({
             Op: "stdout",
-            Data: `${marker}:begin${result}${marker}:end`,
+            Data: [`${marker}:begin`, `${marker}:chunk:${result}`, `${marker}:end`].join("\n"),
           }),
         }),
       );

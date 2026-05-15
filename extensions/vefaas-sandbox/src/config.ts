@@ -26,6 +26,14 @@ type VefaasAccessConfig = {
   headers?: Record<string, string>;
 };
 
+type VefaasOpencodeAcpConfig = {
+  enabled?: boolean;
+  command?: string;
+  args?: string[];
+  workspaceDir?: string;
+  env?: Record<string, string>;
+};
+
 type VefaasPluginConfig = {
   mode?: "remote";
   functionId?: string;
@@ -45,6 +53,7 @@ type VefaasPluginConfig = {
   resources?: VefaasResourcesConfig;
   network?: VefaasNetworkConfig;
   access?: VefaasAccessConfig;
+  opencodeAcp?: VefaasOpencodeAcpConfig;
   env?: Record<string, string>;
 };
 
@@ -67,6 +76,13 @@ export type ResolvedVefaasPluginConfig = {
   resources?: VefaasResourcesConfig;
   network?: VefaasNetworkConfig;
   access?: VefaasAccessConfig;
+  opencodeAcp: {
+    enabled: boolean;
+    command: string;
+    args: string[];
+    workspaceDir: string;
+    env: Record<string, string>;
+  };
   env: Record<string, string>;
 };
 
@@ -79,6 +95,8 @@ const DEFAULT_REMOTE_WORKSPACE_DIR = "/workspace";
 const DEFAULT_REMOTE_AGENT_WORKSPACE_DIR = "/agent";
 const DEFAULT_TTL_SECONDS = 3600;
 const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_OPENCODE_ACP_COMMAND = "opencode";
+const DEFAULT_OPENCODE_ACP_ARGS = ["acp"];
 
 const nonEmptyTrimmedString = (message: string) =>
   z.string({ error: message }).trim().min(1, { error: message });
@@ -120,6 +138,16 @@ const accessSchema = z.strictObject({
   headers: z.record(z.string(), z.string()).optional(),
 });
 
+const opencodeAcpSchema = z.strictObject({
+  enabled: z.boolean({ error: "opencodeAcp.enabled must be a boolean" }).optional(),
+  command: nonEmptyTrimmedString("opencodeAcp.command must be a non-empty string").optional(),
+  args: z.array(z.string({ error: "opencodeAcp.args must be an array of strings" })).optional(),
+  workspaceDir: nonEmptyTrimmedString(
+    "opencodeAcp.workspaceDir must be a non-empty string",
+  ).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+});
+
 const VefaasPluginConfigSchema = z.strictObject({
   mode: z.literal("remote", { error: "mode must be remote" }).optional(),
   functionId: nonEmptyTrimmedString("functionId must be a non-empty string").optional(),
@@ -155,6 +183,7 @@ const VefaasPluginConfigSchema = z.strictObject({
   resources: resourcesSchema.optional(),
   network: networkSchema.optional(),
   access: accessSchema.optional(),
+  opencodeAcp: opencodeAcpSchema.optional(),
   env: z.record(z.string(), z.string()).optional(),
 });
 
@@ -220,6 +249,13 @@ export function resolveVefaasPluginConfig(value: unknown): ResolvedVefaasPluginC
       resources: undefined,
       network: undefined,
       access: undefined,
+      opencodeAcp: {
+        enabled: false,
+        command: DEFAULT_OPENCODE_ACP_COMMAND,
+        args: DEFAULT_OPENCODE_ACP_ARGS,
+        workspaceDir: DEFAULT_REMOTE_WORKSPACE_DIR,
+        env: {},
+      },
       env: {},
     };
   }
@@ -260,6 +296,17 @@ export function resolveVefaasPluginConfig(value: unknown): ResolvedVefaasPluginC
     resources: cfg.resources,
     network: cfg.network,
     access: cfg.access,
+    opencodeAcp: {
+      enabled: cfg.opencodeAcp?.enabled === true,
+      command: cfg.opencodeAcp?.command ?? DEFAULT_OPENCODE_ACP_COMMAND,
+      args: cfg.opencodeAcp?.args ?? DEFAULT_OPENCODE_ACP_ARGS,
+      workspaceDir: normalizeRemotePath(
+        cfg.opencodeAcp?.workspaceDir,
+        cfg.remoteWorkspaceDir ?? DEFAULT_REMOTE_WORKSPACE_DIR,
+        "opencodeAcp.workspaceDir",
+      ),
+      env: cfg.opencodeAcp?.env ?? {},
+    },
     env: cfg.env ?? {},
   };
 }

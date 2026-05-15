@@ -126,6 +126,35 @@
           }
         }
       },
+      "opencodeAcp": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workspaceDir": {
+            "type": "string",
+            "minLength": 1
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "env": {
         "type": "object",
         "additionalProperties": {
@@ -204,6 +233,35 @@
     "access": {
       "label": "Access",
       "help": "HTTP route for All-in-One shell/file APIs, plus optional auth headers.",
+      "advanced": true
+    },
+    "opencodeAcp": {
+      "label": "OpenCode ACP",
+      "help": "Register the vefaas-opencode ACP backend and run OpenCode ACP inside the VEFaaS sandbox.",
+      "advanced": true
+    },
+    "opencodeAcp.enabled": {
+      "label": "OpenCode ACP Enabled",
+      "help": "When true, this plugin registers ACP backend vefaas-opencode for OpenCode running in VEFaaS."
+    },
+    "opencodeAcp.command": {
+      "label": "OpenCode ACP Command",
+      "help": "Command to run inside VEFaaS. Default is opencode.",
+      "advanced": true
+    },
+    "opencodeAcp.args": {
+      "label": "OpenCode ACP Args",
+      "help": "Arguments for the OpenCode ACP command inside VEFaaS. Default is [\"acp\"].",
+      "advanced": true
+    },
+    "opencodeAcp.workspaceDir": {
+      "label": "OpenCode ACP Workspace",
+      "help": "Remote working directory for OpenCode ACP. Defaults to remoteWorkspaceDir.",
+      "advanced": true
+    },
+    "opencodeAcp.env": {
+      "label": "OpenCode ACP Env",
+      "help": "Extra environment variables passed only to the remote OpenCode ACP process.",
       "advanced": true
     },
     "env": {

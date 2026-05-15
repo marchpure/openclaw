@@ -165,8 +165,11 @@ function buildWrappedCommand(params: {
     "env = os.environ.copy()",
     "env.update(payload.get('env') or {})",
     "proc = subprocess.run(['/bin/sh', '-c', payload['script'], 'openclaw-vefaas', *payload.get('args', [])], input=base64.b64decode(payload.get('stdin') or ''), stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)",
-    "result = json.dumps({'code': proc.returncode, 'stdout': base64.b64encode(proc.stdout).decode(), 'stderr': base64.b64encode(proc.stderr).decode()}, separators=(',', ':')).encode()",
-    "print(f'{marker}:begin' + base64.b64encode(result).decode() + f'{marker}:end')",
+    "result = base64.b64encode(json.dumps({'code': proc.returncode, 'stdout': base64.b64encode(proc.stdout).decode(), 'stderr': base64.b64encode(proc.stderr).decode()}, separators=(',', ':')).encode()).decode()",
+    "print(f'{marker}:begin')",
+    "for index in range(0, len(result), 512):",
+    "    print(f'{marker}:chunk:' + result[index:index + 512])",
+    "print(f'{marker}:end')",
     "PY",
   ].join("\n");
 }
@@ -177,7 +180,16 @@ function parseMarkedResult(output: string, marker: string): SandboxBackendComman
   if (start < 0 || end < 0) {
     throw new Error("VEFaaS WebShell command did not return an OpenClaw result marker.");
   }
-  const encoded = output.slice(start + `${marker}:begin`.length, end).trim();
+  const encoded = output
+    .slice(start + `${marker}:begin`.length, end)
+    .split(/\r?\n/u)
+    .map((line) => stripAnsi(line).trim())
+    .filter((line) => line.startsWith(`${marker}:chunk:`))
+    .map((line) => line.slice(`${marker}:chunk:`.length))
+    .join("");
+  if (!encoded) {
+    throw new Error("VEFaaS WebShell command returned an empty OpenClaw result marker.");
+  }
   const parsed = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
     code?: unknown;
     stdout?: unknown;
@@ -188,6 +200,10 @@ function parseMarkedResult(output: string, marker: string): SandboxBackendComman
     stdout: Buffer.from(typeof parsed.stdout === "string" ? parsed.stdout : "", "base64"),
     stderr: Buffer.from(typeof parsed.stderr === "string" ? parsed.stderr : "", "base64"),
   };
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
 function messageDataToString(event: unknown): string {

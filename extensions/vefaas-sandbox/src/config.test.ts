@@ -23,6 +23,13 @@ describe("vefaas plugin config", () => {
       resources: undefined,
       network: undefined,
       access: undefined,
+      opencodeAcp: {
+        enabled: false,
+        command: "opencode",
+        args: ["acp"],
+        workspaceDir: "/workspace",
+        env: {},
+      },
       env: {},
     });
   });
@@ -69,6 +76,15 @@ describe("vefaas plugin config", () => {
         },
         headers: {
           "x-demo": "1",
+        },
+      },
+      opencodeAcp: {
+        enabled: true,
+        command: "opencode",
+        args: ["acp", "--debug"],
+        workspaceDir: "/workspace/opencode",
+        env: {
+          OPENAI_BASE_URL: "https://api.example/v1",
         },
       },
       env: {
@@ -118,6 +134,15 @@ describe("vefaas plugin config", () => {
         },
         headers: {
           "x-demo": "1",
+        },
+      },
+      opencodeAcp: {
+        enabled: true,
+        command: "opencode",
+        args: ["acp", "--debug"],
+        workspaceDir: "/workspace/opencode",
+        env: {
+          OPENAI_BASE_URL: "https://api.example/v1",
         },
       },
       env: {

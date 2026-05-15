@@ -1,37 +1,53 @@
 import fsSync from "node:fs";
 import { describe, expect, it } from "vitest";
-import {
-  buildVefaasSandboxCreateSpec,
-  createVefaasPluginConfigSchema,
-  resolveVefaasPluginConfig,
-} from "./config.js";
+import { createVefaasPluginConfigSchema, resolveVefaasPluginConfig } from "./config.js";
 
 describe("vefaas plugin config", () => {
   it("applies defaults", () => {
     expect(resolveVefaasPluginConfig(undefined)).toEqual({
       mode: "remote",
-      command: "openclaw-vefaas-sandbox",
       functionId: undefined,
+      functionName: "openclaw-vefaas-sandbox",
+      accessKeyId: undefined,
+      secretAccessKey: undefined,
+      sessionToken: undefined,
       region: undefined,
       endpoint: undefined,
-      image:
-        "enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:1.9.3",
+      image: "enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:1.9.3",
+      imageCommand: "/opt/gem/run.sh",
+      port: 8080,
       remoteWorkspaceDir: "/workspace",
       remoteAgentWorkspaceDir: "/agent",
       ttlSeconds: 3600,
       timeoutMs: 120_000,
       resources: undefined,
       network: undefined,
+      access: undefined,
+      env: {},
     });
   });
 
   it("normalizes explicit production settings", () => {
     const resolved = resolveVefaasPluginConfig({
-      command: "/usr/local/bin/vefaas-provisioner",
       functionId: "fn-123",
+      functionName: "openclaw-custom",
+      accessKeyId: {
+        source: "env",
+        id: "VOLCENGINE_ACCESS_KEY",
+      },
+      secretAccessKey: {
+        source: "env",
+        id: "VOLCENGINE_SECRET_KEY",
+      },
+      sessionToken: {
+        source: "env",
+        id: "VOLCENGINE_SESSION_TOKEN",
+      },
       region: "cn-beijing",
       endpoint: "https://vefaas.example",
       image: "registry.example/openclaw-opencode:prod",
+      imageCommand: "/opt/openclaw/start.sh",
+      port: 18080,
       remoteWorkspaceDir: "/workspace/../workspace/project",
       remoteAgentWorkspaceDir: "/agent/./session",
       ttlSeconds: 7200,
@@ -44,15 +60,43 @@ describe("vefaas plugin config", () => {
         egress: "restricted",
         vpcId: "vpc-1",
       },
+      access: {
+        baseUrl: "https://sandbox.example",
+        apiKey: {
+          source: "env",
+          provider: "default",
+          id: "VEFAAS_SANDBOX_API_KEY",
+        },
+        headers: {
+          "x-demo": "1",
+        },
+      },
+      env: {
+        DISABLE_BROWSER: "true",
+      },
     });
 
     expect(resolved).toEqual({
       mode: "remote",
-      command: "/usr/local/bin/vefaas-provisioner",
       functionId: "fn-123",
+      functionName: "openclaw-custom",
+      accessKeyId: {
+        source: "env",
+        id: "VOLCENGINE_ACCESS_KEY",
+      },
+      secretAccessKey: {
+        source: "env",
+        id: "VOLCENGINE_SECRET_KEY",
+      },
+      sessionToken: {
+        source: "env",
+        id: "VOLCENGINE_SESSION_TOKEN",
+      },
       region: "cn-beijing",
       endpoint: "https://vefaas.example",
       image: "registry.example/openclaw-opencode:prod",
+      imageCommand: "/opt/openclaw/start.sh",
+      port: 18080,
       remoteWorkspaceDir: "/workspace/project",
       remoteAgentWorkspaceDir: "/agent/session",
       ttlSeconds: 7200,
@@ -64,6 +108,20 @@ describe("vefaas plugin config", () => {
       network: {
         egress: "restricted",
         vpcId: "vpc-1",
+      },
+      access: {
+        baseUrl: "https://sandbox.example",
+        apiKey: {
+          source: "env",
+          provider: "default",
+          id: "VEFAAS_SANDBOX_API_KEY",
+        },
+        headers: {
+          "x-demo": "1",
+        },
+      },
+      env: {
+        DISABLE_BROWSER: "true",
       },
     });
   });
@@ -82,36 +140,6 @@ describe("vefaas plugin config", () => {
         remoteWorkspaceDir: "workspace",
       }),
     ).toThrow("VEFaaS remoteWorkspaceDir must be absolute");
-  });
-
-  it("builds the create spec forwarded to the provisioner", () => {
-    expect(
-      buildVefaasSandboxCreateSpec(
-        resolveVefaasPluginConfig({
-          region: "cn-beijing",
-          image: "registry.example/openclaw-opencode:prod",
-          resources: {
-            gpuCount: 1,
-            gpuType: "v100",
-          },
-        }),
-      ),
-    ).toEqual({
-      backend: "vefaas",
-      mode: "remote",
-      functionId: undefined,
-      region: "cn-beijing",
-      endpoint: undefined,
-      image: "registry.example/openclaw-opencode:prod",
-      remoteWorkspaceDir: "/workspace",
-      remoteAgentWorkspaceDir: "/agent",
-      ttlSeconds: 3600,
-      resources: {
-        gpuCount: 1,
-        gpuType: "v100",
-      },
-      network: undefined,
-    });
   });
 
   it("keeps the runtime json schema in sync with the manifest config schema", () => {

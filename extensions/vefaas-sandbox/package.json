@@ -8,6 +8,7 @@
   },
   "type": "module",
   "dependencies": {
+    "@volcengine/vefaas": "1.0.5",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -27,7 +28,13 @@
     },
     "build": {
       "openclawVersion": "2026.5.14",
-      "bundledDist": false
+      "bundledDist": false,
+      "staticAssets": [
+        {
+          "source": "./src/exec-shim.mjs",
+          "output": "src/exec-shim.mjs"
+        }
+      ]
     },
     "release": {
       "publishToClawHub": true,

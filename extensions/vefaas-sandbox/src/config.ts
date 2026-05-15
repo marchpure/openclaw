@@ -20,53 +20,61 @@ type VefaasNetworkConfig = {
   securityGroupId?: string;
 };
 
+type VefaasAccessConfig = {
+  baseUrl?: string;
+  apiKey?: unknown;
+  headers?: Record<string, string>;
+};
+
 type VefaasPluginConfig = {
   mode?: "remote";
-  command?: string;
   functionId?: string;
+  functionName?: string;
+  accessKeyId?: unknown;
+  secretAccessKey?: unknown;
+  sessionToken?: unknown;
   region?: string;
   endpoint?: string;
   image?: string;
+  imageCommand?: string;
+  port?: number;
   remoteWorkspaceDir?: string;
   remoteAgentWorkspaceDir?: string;
   ttlSeconds?: number;
   timeoutSeconds?: number;
   resources?: VefaasResourcesConfig;
   network?: VefaasNetworkConfig;
+  access?: VefaasAccessConfig;
+  env?: Record<string, string>;
 };
 
 export type ResolvedVefaasPluginConfig = {
   mode: "remote";
-  command: string;
   functionId?: string;
+  functionName: string;
+  accessKeyId?: unknown;
+  secretAccessKey?: unknown;
+  sessionToken?: unknown;
   region?: string;
   endpoint?: string;
   image: string;
+  imageCommand: string;
+  port: number;
   remoteWorkspaceDir: string;
   remoteAgentWorkspaceDir: string;
   ttlSeconds: number;
   timeoutMs: number;
   resources?: VefaasResourcesConfig;
   network?: VefaasNetworkConfig;
+  access?: VefaasAccessConfig;
+  env: Record<string, string>;
 };
 
-export type VefaasSandboxCreateSpec = {
-  backend: "vefaas";
-  mode: "remote";
-  functionId?: string;
-  region?: string;
-  endpoint?: string;
-  image: string;
-  remoteWorkspaceDir: string;
-  remoteAgentWorkspaceDir: string;
-  ttlSeconds: number;
-  resources?: VefaasResourcesConfig;
-  network?: VefaasNetworkConfig;
-};
-
-const DEFAULT_COMMAND = "openclaw-vefaas-sandbox";
+const DEFAULT_FUNCTION_NAME = "openclaw-vefaas-sandbox";
 const DEFAULT_IMAGE =
   "enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:1.9.3";
+const DEFAULT_IMAGE_COMMAND = "/opt/gem/run.sh";
+const DEFAULT_PORT = 8080;
 const DEFAULT_REMOTE_WORKSPACE_DIR = "/workspace";
 const DEFAULT_REMOTE_AGENT_WORKSPACE_DIR = "/agent";
 const DEFAULT_TTL_SECONDS = 3600;
@@ -106,13 +114,29 @@ const networkSchema = z.strictObject({
   ).optional(),
 });
 
+const accessSchema = z.strictObject({
+  baseUrl: nonEmptyTrimmedString("access.baseUrl must be a non-empty string").optional(),
+  apiKey: z.unknown().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+});
+
 const VefaasPluginConfigSchema = z.strictObject({
   mode: z.literal("remote", { error: "mode must be remote" }).optional(),
-  command: nonEmptyTrimmedString("command must be a non-empty string").optional(),
   functionId: nonEmptyTrimmedString("functionId must be a non-empty string").optional(),
+  functionName: nonEmptyTrimmedString("functionName must be a non-empty string").optional(),
+  accessKeyId: z.unknown().optional(),
+  secretAccessKey: z.unknown().optional(),
+  sessionToken: z.unknown().optional(),
   region: nonEmptyTrimmedString("region must be a non-empty string").optional(),
   endpoint: nonEmptyTrimmedString("endpoint must be a non-empty string").optional(),
   image: nonEmptyTrimmedString("image must be a non-empty string").optional(),
+  imageCommand: nonEmptyTrimmedString("imageCommand must be a non-empty string").optional(),
+  port: z
+    .number({ error: "port must be an integer between 1 and 65535" })
+    .int({ error: "port must be an integer between 1 and 65535" })
+    .min(1, { error: "port must be an integer between 1 and 65535" })
+    .max(65535, { error: "port must be an integer between 1 and 65535" })
+    .optional(),
   remoteWorkspaceDir: nonEmptyTrimmedString(
     "remoteWorkspaceDir must be a non-empty string",
   ).optional(),
@@ -130,6 +154,8 @@ const VefaasPluginConfigSchema = z.strictObject({
     .optional(),
   resources: resourcesSchema.optional(),
   network: networkSchema.optional(),
+  access: accessSchema.optional(),
+  env: z.record(z.string(), z.string()).optional(),
 });
 
 function normalizeRemotePath(
@@ -177,17 +203,24 @@ export function resolveVefaasPluginConfig(value: unknown): ResolvedVefaasPluginC
   if (value === undefined) {
     return {
       mode: "remote",
-      command: DEFAULT_COMMAND,
       functionId: undefined,
+      functionName: DEFAULT_FUNCTION_NAME,
+      accessKeyId: undefined,
+      secretAccessKey: undefined,
+      sessionToken: undefined,
       region: undefined,
       endpoint: undefined,
       image: DEFAULT_IMAGE,
+      imageCommand: DEFAULT_IMAGE_COMMAND,
+      port: DEFAULT_PORT,
       remoteWorkspaceDir: DEFAULT_REMOTE_WORKSPACE_DIR,
       remoteAgentWorkspaceDir: DEFAULT_REMOTE_AGENT_WORKSPACE_DIR,
       ttlSeconds: DEFAULT_TTL_SECONDS,
       timeoutMs: DEFAULT_TIMEOUT_MS,
       resources: undefined,
       network: undefined,
+      access: undefined,
+      env: {},
     };
   }
 
@@ -199,11 +232,16 @@ export function resolveVefaasPluginConfig(value: unknown): ResolvedVefaasPluginC
   const cfg = parsed.data as VefaasPluginConfig;
   return {
     mode: "remote",
-    command: cfg.command ?? DEFAULT_COMMAND,
     functionId: trimOptional(cfg.functionId),
+    functionName: trimOptional(cfg.functionName) ?? DEFAULT_FUNCTION_NAME,
+    accessKeyId: cfg.accessKeyId,
+    secretAccessKey: cfg.secretAccessKey,
+    sessionToken: cfg.sessionToken,
     region: trimOptional(cfg.region),
     endpoint: trimOptional(cfg.endpoint),
     image: cfg.image ?? DEFAULT_IMAGE,
+    imageCommand: cfg.imageCommand ?? DEFAULT_IMAGE_COMMAND,
+    port: cfg.port ?? DEFAULT_PORT,
     remoteWorkspaceDir: normalizeRemotePath(
       cfg.remoteWorkspaceDir,
       DEFAULT_REMOTE_WORKSPACE_DIR,
@@ -221,23 +259,7 @@ export function resolveVefaasPluginConfig(value: unknown): ResolvedVefaasPluginC
         : DEFAULT_TIMEOUT_MS,
     resources: cfg.resources,
     network: cfg.network,
-  };
-}
-
-export function buildVefaasSandboxCreateSpec(
-  config: ResolvedVefaasPluginConfig,
-): VefaasSandboxCreateSpec {
-  return {
-    backend: "vefaas",
-    mode: config.mode,
-    functionId: config.functionId,
-    region: config.region,
-    endpoint: config.endpoint,
-    image: config.image,
-    remoteWorkspaceDir: config.remoteWorkspaceDir,
-    remoteAgentWorkspaceDir: config.remoteAgentWorkspaceDir,
-    ttlSeconds: config.ttlSeconds,
-    resources: config.resources,
-    network: config.network,
+    access: cfg.access,
+    env: cfg.env ?? {},
   };
 }

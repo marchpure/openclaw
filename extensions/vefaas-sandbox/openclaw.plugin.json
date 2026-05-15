@@ -4,7 +4,7 @@
     "onStartup": true
   },
   "name": "VEFaaS Sandbox",
-  "description": "Sandbox backend powered by VEFaaS with SSH-based command execution and remote workspaces.",
+  "description": "Sandbox backend powered by VEFaaS cloud sandbox applications and All-in-One HTTP shell/file APIs.",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -12,10 +12,6 @@
       "mode": {
         "type": "string",
         "const": "remote"
-      },
-      "command": {
-        "type": "string",
-        "minLength": 1
       },
       "functionId": {
         "type": "string",
@@ -80,7 +76,11 @@
         "properties": {
           "egress": {
             "type": "string",
-            "enum": ["default", "restricted", "disabled"]
+            "enum": [
+              "default",
+              "restricted",
+              "disabled"
+            ]
           },
           "vpcId": {
             "type": "string",
@@ -95,7 +95,46 @@
             "minLength": 1
           }
         }
-      }
+      },
+      "functionName": {
+        "type": "string",
+        "minLength": 1
+      },
+      "imageCommand": {
+        "type": "string",
+        "minLength": 1
+      },
+      "port": {
+        "type": "integer",
+        "maximum": 65535,
+        "minimum": 1
+      },
+      "access": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "baseUrl": {
+            "type": "string",
+            "minLength": 1
+          },
+          "apiKey": {},
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "env": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "accessKeyId": {},
+      "secretAccessKey": {},
+      "sessionToken": {}
     }
   },
   "uiHints": {
@@ -103,21 +142,17 @@
       "label": "Mode",
       "help": "Workspace mode. The VEFaaS backend currently supports remote canonical workspaces."
     },
-    "command": {
-      "label": "Provisioner Command",
-      "help": "Path or command name for the VEFaaS sandbox provisioner."
-    },
     "functionId": {
       "label": "Function ID",
-      "help": "Optional VEFaaS webserver sandbox function id forwarded to the provisioner."
+      "help": "Optional VEFaaS sandbox application id. If omitted, the plugin creates or reuses functionName."
     },
     "region": {
       "label": "Region",
-      "help": "Optional VEFaaS region passed to the provisioner."
+      "help": "Optional VEFaaS region used by the VEFaaS control plane."
     },
     "endpoint": {
       "label": "Endpoint",
-      "help": "Optional VEFaaS control-plane endpoint passed to the provisioner.",
+      "help": "Optional VEFaaS control-plane endpoint used by the VEFaaS control plane.",
       "advanced": true
     },
     "image": {
@@ -141,17 +176,54 @@
     },
     "timeoutSeconds": {
       "label": "Command Timeout Seconds",
-      "help": "Timeout for provisioner operations such as create and ssh-config.",
+      "help": "Timeout for VEFaaS SDK and remote command operations.",
       "advanced": true
     },
     "resources": {
       "label": "Resources",
-      "help": "Optional CPU, memory, and GPU request forwarded to the provisioner.",
+      "help": "Optional CPU, memory, and GPU request used by the VEFaaS control plane.",
       "advanced": true
     },
     "network": {
       "label": "Network",
-      "help": "Optional network placement and egress policy forwarded to the provisioner.",
+      "help": "Optional network placement and egress policy used by the VEFaaS control plane.",
+      "advanced": true
+    },
+    "functionName": {
+      "label": "Function Name",
+      "help": "VEFaaS sandbox application name to create or reuse when functionId is not set."
+    },
+    "imageCommand": {
+      "label": "Image Command",
+      "help": "Container command used by the VEFaaS sandbox instance."
+    },
+    "port": {
+      "label": "Port",
+      "help": "HTTP port exposed by the All-in-One sandbox image."
+    },
+    "access": {
+      "label": "Access",
+      "help": "HTTP route for All-in-One shell/file APIs, plus optional auth headers.",
+      "advanced": true
+    },
+    "env": {
+      "label": "Environment",
+      "help": "Additional VEFaaS sandbox instance environment variable overrides.",
+      "advanced": true
+    },
+    "accessKeyId": {
+      "label": "Access Key ID",
+      "help": "Optional VEFaaS control-plane access key or SecretRef. Defaults to VOLCSTACK_ACCESS_KEY_ID, VOLCSTACK_ACCESS_KEY, VOLCENGINE_ACCESS_KEY, or VOLCENGINE_ACCESS_KEY_ID.",
+      "advanced": true
+    },
+    "secretAccessKey": {
+      "label": "Secret Access Key",
+      "help": "Optional VEFaaS control-plane secret key or SecretRef. Defaults to VOLCSTACK_SECRET_ACCESS_KEY, VOLCSTACK_SECRET_KEY, VOLCENGINE_SECRET_KEY, or VOLCENGINE_SECRET_ACCESS_KEY.",
+      "advanced": true
+    },
+    "sessionToken": {
+      "label": "Session Token",
+      "help": "Optional VEFaaS control-plane session token or SecretRef.",
       "advanced": true
     }
   }

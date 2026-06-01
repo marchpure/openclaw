@@ -152,7 +152,6 @@ const CODEX_APP_SERVER_STARTUP_TIMEOUT_FLOOR_MS = 100;
 const CODEX_APP_SERVER_INTERRUPT_TIMEOUT_MS = 5_000;
 const CODEX_USAGE_LIMIT_RATE_LIMIT_REFRESH_TIMEOUT_MS = 5_000;
 const CODEX_TURN_COMPLETION_IDLE_TIMEOUT_MS = 60_000;
-const CODEX_TURN_ASSISTANT_COMPLETION_IDLE_TIMEOUT_MS = 10_000;
 const CODEX_TURN_TERMINAL_IDLE_TIMEOUT_MS = 30 * 60_000;
 const CODEX_NATIVE_HOOK_RELAY_MIN_TTL_MS = 30 * 60_000;
 const CODEX_NATIVE_HOOK_RELAY_TTL_GRACE_MS = 5 * 60_000;
@@ -441,7 +440,6 @@ export async function runCodexAppServerAttempt(
       hookTimeoutSec?: number;
     };
     turnCompletionIdleTimeoutMs?: number;
-    turnAssistantCompletionIdleTimeoutMs?: number;
     turnTerminalIdleTimeoutMs?: number;
   } = {},
 ): Promise<EmbeddedRunAttemptResult> {
@@ -904,19 +902,12 @@ export async function runCodexAppServerAttempt(
   const turnCompletionIdleTimeoutMs = resolveCodexTurnCompletionIdleTimeoutMs(
     options.turnCompletionIdleTimeoutMs ?? appServer.turnCompletionIdleTimeoutMs,
   );
-  const turnAssistantCompletionIdleTimeoutMs = resolveCodexTurnAssistantCompletionIdleTimeoutMs(
-    options.turnAssistantCompletionIdleTimeoutMs,
-  );
   const turnTerminalIdleTimeoutMs = resolveCodexTurnTerminalIdleTimeoutMs(
     options.turnTerminalIdleTimeoutMs,
   );
   let turnCompletionIdleTimer: ReturnType<typeof setTimeout> | undefined;
   let turnCompletionIdleWatchArmed = false;
   let turnCompletionIdleWatchPinnedByTerminalError = false;
-  let turnAssistantCompletionIdleTimer: ReturnType<typeof setTimeout> | undefined;
-  let turnAssistantCompletionIdleWatchArmed = false;
-  let turnAssistantCompletionLastActivityAt = Date.now();
-  let turnAssistantCompletionLastActivityDetails: Record<string, unknown> | undefined;
   let turnTerminalIdleTimer: ReturnType<typeof setTimeout> | undefined;
   let turnTerminalIdleWatchArmed = false;
   let turnCompletionLastActivityAt = Date.now();
@@ -924,7 +915,6 @@ export async function runCodexAppServerAttempt(
   let turnCompletionLastActivityDetails: Record<string, unknown> | undefined;
   let activeAppServerTurnRequests = 0;
   const activeOpenClawDynamicToolCallIds = new Set<string>();
-  const activeTurnItemIds = new Set<string>();
 
   const clearTurnCompletionIdleTimer = () => {
     if (turnCompletionIdleTimer) {
@@ -938,57 +928,6 @@ export async function runCodexAppServerAttempt(
       clearTimeout(turnTerminalIdleTimer);
       turnTerminalIdleTimer = undefined;
     }
-  };
-
-  const clearTurnAssistantCompletionIdleTimer = () => {
-    if (turnAssistantCompletionIdleTimer) {
-      clearTimeout(turnAssistantCompletionIdleTimer);
-      turnAssistantCompletionIdleTimer = undefined;
-    }
-  };
-
-  const fireTurnAssistantCompletionIdleRelease = () => {
-    if (completed || runAbortController.signal.aborted || !turnAssistantCompletionIdleWatchArmed) {
-      return;
-    }
-    if (activeAppServerTurnRequests > 0 || activeTurnItemIds.size > 0) {
-      scheduleTurnAssistantCompletionIdleWatch();
-      return;
-    }
-    const idleMs = Math.max(0, Date.now() - turnAssistantCompletionLastActivityAt);
-    if (idleMs < turnAssistantCompletionIdleTimeoutMs) {
-      scheduleTurnAssistantCompletionIdleWatch();
-      return;
-    }
-    turnAssistantCompletionIdleWatchArmed = false;
-    clearTurnCompletionIdleTimer();
-    clearTurnTerminalIdleTimer();
-    trajectoryRecorder?.recordEvent("turn.assistant_completion_idle_release", {
-      threadId: thread.threadId,
-      turnId,
-      idleMs,
-      timeoutMs: turnAssistantCompletionIdleTimeoutMs,
-      ...turnAssistantCompletionLastActivityDetails,
-    });
-    embeddedAgentLog.warn(
-      "codex app-server turn released after completed assistant item without terminal event",
-      {
-        threadId: thread.threadId,
-        turnId,
-        idleMs,
-        timeoutMs: turnAssistantCompletionIdleTimeoutMs,
-        ...turnAssistantCompletionLastActivityDetails,
-      },
-    );
-    if (turnId) {
-      interruptCodexTurnBestEffort(client, {
-        threadId: thread.threadId,
-        turnId,
-        timeoutMs: CODEX_APP_SERVER_INTERRUPT_TIMEOUT_MS,
-      });
-    }
-    completed = true;
-    resolveCompletion?.();
   };
 
   const fireTurnCompletionIdleTimeout = () => {
@@ -1083,17 +1022,6 @@ export async function runCodexAppServerAttempt(
     turnCompletionIdleTimer.unref?.();
   }
 
-  function scheduleTurnAssistantCompletionIdleWatch() {
-    clearTurnAssistantCompletionIdleTimer();
-    if (completed || runAbortController.signal.aborted || !turnAssistantCompletionIdleWatchArmed) {
-      return;
-    }
-    const elapsedMs = Math.max(0, Date.now() - turnAssistantCompletionLastActivityAt);
-    const delayMs = Math.max(1, turnAssistantCompletionIdleTimeoutMs - elapsedMs);
-    turnAssistantCompletionIdleTimer = setTimeout(fireTurnAssistantCompletionIdleRelease, delayMs);
-    turnAssistantCompletionIdleTimer.unref?.();
-  }
-
   function scheduleTurnTerminalIdleWatch() {
     clearTurnTerminalIdleTimer();
     if (
@@ -1136,19 +1064,6 @@ export async function runCodexAppServerAttempt(
     turnCompletionIdleWatchArmed = false;
     turnCompletionIdleWatchPinnedByTerminalError = false;
     clearTurnCompletionIdleTimer();
-  };
-
-  const disarmTurnAssistantCompletionIdleWatch = () => {
-    turnAssistantCompletionIdleWatchArmed = false;
-    turnAssistantCompletionLastActivityDetails = undefined;
-    clearTurnAssistantCompletionIdleTimer();
-  };
-
-  const armTurnAssistantCompletionIdleWatch = (details?: Record<string, unknown>) => {
-    turnAssistantCompletionIdleWatchArmed = true;
-    turnAssistantCompletionLastActivityAt = Date.now();
-    turnAssistantCompletionLastActivityDetails = details;
-    scheduleTurnAssistantCompletionIdleWatch();
   };
 
   const armTurnCompletionIdleWatch = (options?: { pinnedByTerminalError?: boolean }) => {
@@ -1238,32 +1153,12 @@ export async function runCodexAppServerAttempt(
       });
       reportCodexExecutionNotification(notification);
     }
-    if (isCurrentTurnNotification) {
-      updateActiveTurnItemIds(notification, activeTurnItemIds);
-    }
-    const unblockedAssistantCompletionRelease =
-      isCurrentTurnNotification &&
-      turnAssistantCompletionIdleWatchArmed &&
-      notification.method === "item/completed" &&
-      activeTurnItemIds.size === 0;
     if (isCurrentTurnNotification && notification.method === "error") {
       if (isRetryableErrorNotification(notification.params)) {
         disarmTurnCompletionIdleWatch();
       } else {
         armTurnCompletionIdleWatch({ pinnedByTerminalError: true });
       }
-      disarmTurnAssistantCompletionIdleWatch();
-    } else if (isTurnCompletion) {
-      disarmTurnAssistantCompletionIdleWatch();
-    } else if (isCurrentTurnNotification && isCompletedAssistantNotification(notification)) {
-      armTurnAssistantCompletionIdleWatch(describeNotificationActivity(notification));
-    } else if (unblockedAssistantCompletionRelease) {
-      armTurnAssistantCompletionIdleWatch(describeNotificationActivity(notification));
-    } else if (
-      isCurrentTurnNotification &&
-      shouldDisarmAssistantCompletionIdleWatch(notification)
-    ) {
-      disarmTurnAssistantCompletionIdleWatch();
     }
     if (
       turnCompletionIdleWatchArmed &&
@@ -1305,7 +1200,6 @@ export async function runCodexAppServerAttempt(
         }
         completed = true;
         clearTurnCompletionIdleTimer();
-        clearTurnAssistantCompletionIdleTimer();
         clearTurnTerminalIdleTimer();
         resolveCompletion?.();
       }
@@ -1323,7 +1217,6 @@ export async function runCodexAppServerAttempt(
   const requestCleanup = client.addRequestHandler(async (request) => {
     activeAppServerTurnRequests += 1;
     clearTurnCompletionIdleTimer();
-    disarmTurnAssistantCompletionIdleWatch();
     touchTurnCompletionActivity(`request:${request.method}`);
     let armCompletionWatchOnResponse = false;
     try {
@@ -1855,7 +1748,6 @@ export async function runCodexAppServerAttempt(
     userInputBridge?.cancelPending();
     clearTimeout(timeout);
     clearTurnCompletionIdleTimer();
-    clearTurnAssistantCompletionIdleTimer();
     clearTurnTerminalIdleTimer();
     notificationCleanup();
     requestCleanup();
@@ -2417,16 +2309,6 @@ function resolveCodexTurnCompletionIdleTimeoutMs(value: number | undefined): num
   return Math.max(1, Math.floor(value));
 }
 
-function resolveCodexTurnAssistantCompletionIdleTimeoutMs(value: number | undefined): number {
-  if (value === undefined) {
-    return CODEX_TURN_ASSISTANT_COMPLETION_IDLE_TIMEOUT_MS;
-  }
-  if (!Number.isFinite(value)) {
-    return CODEX_TURN_ASSISTANT_COMPLETION_IDLE_TIMEOUT_MS;
-  }
-  return Math.max(1, Math.floor(value));
-}
-
 function resolveCodexTurnTerminalIdleTimeoutMs(value: number | undefined): number {
   if (value === undefined) {
     return CODEX_TURN_TERMINAL_IDLE_TIMEOUT_MS;
@@ -2653,52 +2535,6 @@ function describeNotificationActivity(
     lastNotificationItemRole: readString(item, "role"),
     lastAssistantTextPreview: readRawAssistantTextPreview(item),
   };
-}
-
-function updateActiveTurnItemIds(
-  notification: CodexServerNotification,
-  activeItemIds: Set<string>,
-): void {
-  if (notification.method !== "item/started" && notification.method !== "item/completed") {
-    return;
-  }
-  const itemId = readNotificationItemId(notification);
-  if (!itemId) {
-    return;
-  }
-  if (notification.method === "item/started") {
-    activeItemIds.add(itemId);
-    return;
-  }
-  activeItemIds.delete(itemId);
-}
-
-function isCompletedAssistantNotification(notification: CodexServerNotification): boolean {
-  if (!isJsonObject(notification.params)) {
-    return false;
-  }
-  if (notification.method !== "item/completed") {
-    return false;
-  }
-  const item = isJsonObject(notification.params.item) ? notification.params.item : undefined;
-  return Boolean(
-    item &&
-    readString(item, "type") === "agentMessage" &&
-    readString(item, "phase") !== "commentary",
-  );
-}
-
-function shouldDisarmAssistantCompletionIdleWatch(notification: CodexServerNotification): boolean {
-  if (!isJsonObject(notification.params)) {
-    return false;
-  }
-  if (notification.method === "item/started") {
-    return true;
-  }
-  if (notification.method === "item/agentMessage/delta") {
-    return true;
-  }
-  return false;
 }
 
 function readNotificationItemId(notification: CodexServerNotification): string | undefined {

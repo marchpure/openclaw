@@ -1655,7 +1655,6 @@ describe("runCodexAppServerAttempt", () => {
 
     const run = runCodexAppServerAttempt(params, {
       turnCompletionIdleTimeoutMs: 5,
-      turnAssistantCompletionIdleTimeoutMs: 200,
       turnTerminalIdleTimeoutMs: 200,
     });
     await vi.waitFor(() => expect(handleRequest).toBeTypeOf("function"), { interval: 1 });
@@ -1748,7 +1747,6 @@ describe("runCodexAppServerAttempt", () => {
 
     const run = runCodexAppServerAttempt(params, {
       turnCompletionIdleTimeoutMs: 5,
-      turnAssistantCompletionIdleTimeoutMs: 500,
       turnTerminalIdleTimeoutMs: 5,
     });
     await vi.waitFor(() => expect(handleRequest).toBeTypeOf("function"), { interval: 1 });
@@ -1887,7 +1885,7 @@ describe("runCodexAppServerAttempt", () => {
     );
   });
 
-  it("releases the session when a completed agent message item goes quiet", async () => {
+  it("does not release the session without a turn terminal event after an agent message item", async () => {
     let notify: (notification: CodexServerNotification) => Promise<void> = async () => undefined;
     const request = vi.fn(async (method: string) => {
       if (method === "thread/start") {
@@ -1915,9 +1913,7 @@ describe("runCodexAppServerAttempt", () => {
     );
     params.timeoutMs = 200;
 
-    const run = runCodexAppServerAttempt(params, {
-      turnAssistantCompletionIdleTimeoutMs: 5,
-    });
+    const run = runCodexAppServerAttempt(params, { turnTerminalIdleTimeoutMs: 15 });
     await vi.waitFor(
       () =>
         expect(request).toHaveBeenCalledWith("turn/start", expect.anything(), expect.anything()),
@@ -1941,12 +1937,10 @@ describe("runCodexAppServerAttempt", () => {
       aborted: result.aborted,
       timedOut: result.timedOut,
       promptError: result.promptError,
-      assistantTexts: result.assistantTexts,
     }).toEqual({
-      aborted: false,
-      timedOut: false,
-      promptError: null,
-      assistantTexts: ["Done."],
+      aborted: true,
+      timedOut: true,
+      promptError: "codex app-server turn idle timed out waiting for turn/completed",
     });
     await vi.waitFor(
       () =>
@@ -1962,7 +1956,7 @@ describe("runCodexAppServerAttempt", () => {
     );
   });
 
-  it("releases the session when a real completed agent message omits text", async () => {
+  it("releases the session when a completed agent message is followed by turn completion", async () => {
     let notify: (notification: CodexServerNotification) => Promise<void> = async () => undefined;
     const request = vi.fn(async (method: string) => {
       if (method === "thread/start") {
@@ -1990,9 +1984,7 @@ describe("runCodexAppServerAttempt", () => {
     );
     params.timeoutMs = 200;
 
-    const run = runCodexAppServerAttempt(params, {
-      turnAssistantCompletionIdleTimeoutMs: 5,
-    });
+    const run = runCodexAppServerAttempt(params, { turnTerminalIdleTimeoutMs: 60_000 });
     await vi.waitFor(
       () =>
         expect(request).toHaveBeenCalledWith("turn/start", expect.anything(), expect.anything()),
@@ -2018,6 +2010,14 @@ describe("runCodexAppServerAttempt", () => {
         },
       },
     });
+    await notify({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        turn: { id: "turn-1", status: "completed" },
+      },
+    });
 
     const result = await run;
     expect({
@@ -2031,21 +2031,10 @@ describe("runCodexAppServerAttempt", () => {
       promptError: null,
       assistantTexts: ["Done."],
     });
-    await vi.waitFor(
-      () =>
-        expect(request).toHaveBeenCalledWith(
-          "turn/interrupt",
-          {
-            threadId: "thread-1",
-            turnId: "turn-1",
-          },
-          { timeoutMs: 5_000 },
-        ),
-      { interval: 1 },
-    );
+    expect(request.mock.calls.some(([method]) => method === "turn/interrupt")).toBe(false);
   });
 
-  it("keeps the completed assistant release armed across bookkeeping notifications", async () => {
+  it("does not treat bookkeeping after an agent message as turn completion", async () => {
     let notify: (notification: CodexServerNotification) => Promise<void> = async () => undefined;
     const request = vi.fn(async (method: string) => {
       if (method === "thread/start") {
@@ -2073,9 +2062,7 @@ describe("runCodexAppServerAttempt", () => {
     );
     params.timeoutMs = 200;
 
-    const run = runCodexAppServerAttempt(params, {
-      turnAssistantCompletionIdleTimeoutMs: 5,
-    });
+    const run = runCodexAppServerAttempt(params, { turnTerminalIdleTimeoutMs: 15 });
     await vi.waitFor(
       () =>
         expect(request).toHaveBeenCalledWith("turn/start", expect.anything(), expect.anything()),
@@ -2115,12 +2102,10 @@ describe("runCodexAppServerAttempt", () => {
       aborted: result.aborted,
       timedOut: result.timedOut,
       promptError: result.promptError,
-      assistantTexts: result.assistantTexts,
     }).toEqual({
-      aborted: false,
-      timedOut: false,
-      promptError: null,
-      assistantTexts: ["Done."],
+      aborted: true,
+      timedOut: true,
+      promptError: "codex app-server turn idle timed out waiting for turn/completed",
     });
     await vi.waitFor(
       () =>
@@ -2164,8 +2149,10 @@ describe("runCodexAppServerAttempt", () => {
     );
     params.timeoutMs = 200;
 
-    const run = runCodexAppServerAttempt(params, {
-      turnAssistantCompletionIdleTimeoutMs: 5,
+    const run = runCodexAppServerAttempt(params, { turnTerminalIdleTimeoutMs: 60_000 });
+    let resolved = false;
+    void run.then(() => {
+      resolved = true;
     });
     await vi.waitFor(
       () =>
@@ -2187,7 +2174,8 @@ describe("runCodexAppServerAttempt", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(request).not.toHaveBeenCalledWith("turn/interrupt", expect.anything());
+    expect(request.mock.calls.some(([method]) => method === "turn/interrupt")).toBe(false);
+    expect(resolved).toBe(false);
     await notify({
       method: "item/completed",
       params: {
@@ -2199,6 +2187,16 @@ describe("runCodexAppServerAttempt", () => {
           phase: "final_answer",
           text: "Done.",
         },
+      },
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(resolved).toBe(false);
+    await notify({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        turn: { id: "turn-1", status: "completed" },
       },
     });
 
@@ -2245,7 +2243,6 @@ describe("runCodexAppServerAttempt", () => {
     params.timeoutMs = 200;
 
     const run = runCodexAppServerAttempt(params, {
-      turnAssistantCompletionIdleTimeoutMs: 5,
       turnTerminalIdleTimeoutMs: 15,
     });
     await vi.waitFor(
@@ -2309,8 +2306,7 @@ describe("runCodexAppServerAttempt", () => {
     params.timeoutMs = 200;
 
     const run = runCodexAppServerAttempt(params, {
-      turnAssistantCompletionIdleTimeoutMs: 5,
-      turnTerminalIdleTimeoutMs: 50,
+      turnTerminalIdleTimeoutMs: 60_000,
     });
     await vi.waitFor(
       () =>
@@ -2346,6 +2342,14 @@ describe("runCodexAppServerAttempt", () => {
         threadId: "thread-1",
         turnId: "turn-1",
         item: { type: "commandExecution", id: "cmd-1", status: "completed" },
+      },
+    });
+    await notify({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        turn: { id: "turn-1", status: "completed" },
       },
     });
 

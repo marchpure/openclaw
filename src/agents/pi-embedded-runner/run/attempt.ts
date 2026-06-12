@@ -660,6 +660,10 @@ export function shouldRunLlmOutputHooksForAttempt(params: { promptErrorSource: s
   return params.promptErrorSource !== "hook:before_agent_run";
 }
 
+export function isMidTurnPrecheckEnabled(config?: EmbeddedRunAttemptParams["config"]): boolean {
+  return config?.agents?.defaults?.compaction?.midTurnPrecheck?.enabled !== false;
+}
+
 function isMidTurnPrecheckAssistantError(message: AgentMessage | undefined): boolean {
   if (!message || message.role !== "assistant") {
     return false;
@@ -1992,8 +1996,7 @@ export async function runEmbeddedAttempt(
         cfg: params.config,
         agentId: sessionAgentId,
       });
-      const midTurnPrecheckEnabled =
-        params.config?.agents?.defaults?.compaction?.midTurnPrecheck?.enabled === true;
+      const midTurnPrecheckEnabled = isMidTurnPrecheckEnabled(params.config);
       let pendingMidTurnPrecheckRequest: MidTurnPrecheckRequest | null = null;
       const onMidTurnPrecheck = (request: MidTurnPrecheckRequest) => {
         pendingMidTurnPrecheckRequest = request;

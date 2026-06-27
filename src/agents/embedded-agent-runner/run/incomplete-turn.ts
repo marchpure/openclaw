@@ -889,7 +889,7 @@ function isSingleActionThenNarrativePattern(params: {
 const POST_TOOL_CONTINUATION_ACTION_RE =
   /\b(?:create|write|add|implement|build|update|finish|complete|test|verify|run|generate|prepare|wire|set up|start|continue)\b/i;
 const POST_TOOL_CONTINUATION_INTENT_RE =
-  /^\s*(?:(?:now|next|then|after(?:wards)?)[, ]+)?(?:let me|i(?:'ll| will| am going to|'m going to)|i need to|i can)\b/i;
+  /(?:^\s*(?:(?:now|next|then|after(?:wards)?)[, ]+)?(?:let me|i(?:'ll| will| am going to|'m going to)|i need to|i can)\b|\blet me\b)/i;
 const POST_TOOL_TERSE_CONSTRUCTION_RE =
   /^\s*(?:now|next|then|after(?:wards)?)[, ]+the\s+\w+[\s\S]{0,120}\bwith\b/i;
 const POST_TOOL_COMPLETION_RE =

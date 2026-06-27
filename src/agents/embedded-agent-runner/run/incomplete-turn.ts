@@ -904,6 +904,7 @@ export function resolvePostToolContinuationRetryInstruction(params: {
   modelId?: string;
   modelApi?: string;
   executionContract?: string;
+  continuationActive?: boolean;
   aborted: boolean;
   timedOut: boolean;
   attempt: PlanningOnlyAttempt;
@@ -922,7 +923,7 @@ export function resolvePostToolContinuationRetryInstruction(params: {
     params.attempt.didSendDeterministicApprovalPrompt ||
     params.attempt.lastToolError ||
     hasAcceptedSessionSpawn(params.attempt.acceptedSessionSpawns) ||
-    !hasNonPlanToolActivity(params.attempt.toolMetas) ||
+    (!params.continuationActive && !hasNonPlanToolActivity(params.attempt.toolMetas)) ||
     hasMessagingToolDeliveryEvidence(params.attempt)
   ) {
     return null;

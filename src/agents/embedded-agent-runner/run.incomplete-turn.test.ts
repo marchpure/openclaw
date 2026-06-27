@@ -901,6 +901,89 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     expectWarnMessageWith("retrying 2/4 with continuation steer");
   });
 
+  it("keeps retrying planning-only text inside an active post-tool continuation chain", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedResolveModelAsync.mockResolvedValue({
+      model: {
+        id: "gpt-5.5",
+        provider: "openai-codex",
+        contextWindow: 200000,
+        api: "openai-codex-responses",
+      },
+      error: null,
+      authStorage: {
+        setRuntimeApiKey: vi.fn(),
+      },
+      modelRegistry: {},
+    });
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        toolMetas: [{ toolName: "bash", meta: "cat > irp/parser.py" }],
+        assistantTexts: ["Fixing the parser and building all deliverables now."],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "openai-codex",
+          model: "gpt-5.5",
+          content: [
+            {
+              type: "text",
+              text: "Fixing the parser and building all deliverables now.",
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: [
+          "I'll fix the parser and build all deliverables in one efficient batch. Let me start with the parser fix and sample logs.",
+        ],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "openai-codex",
+          model: "gpt-5.5",
+          content: [
+            {
+              type: "text",
+              text: "I'll fix the parser and build all deliverables in one efficient batch. Let me start with the parser fix and sample logs.",
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: ["Created the sample logs and completed the incident response package."],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "openai-codex",
+          model: "gpt-5.5",
+          content: [
+            {
+              type: "text",
+              text: "Created the sample logs and completed the incident response package.",
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    await runEmbeddedAgent({
+      ...overflowBaseRunParams,
+      provider: "openai-codex",
+      model: "gpt-5.5",
+      runId: "run-active-post-tool-continuation-planning-only",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(3);
+    expect(runAttemptCall(1).prompt).toContain(POST_TOOL_CONTINUATION_RETRY_INSTRUCTION);
+    expect(runAttemptCall(2).prompt).toContain(POST_TOOL_CONTINUATION_RETRY_INSTRUCTION);
+    expectWarnMessageWith("retrying 2/4 with continuation steer");
+  });
+
   it("retries replay-safe missing terminal assistant turns once with the same prompt", async () => {
     mockedClassifyFailoverReason.mockReturnValue(null);
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(

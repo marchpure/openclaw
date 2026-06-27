@@ -3079,6 +3079,7 @@ export async function runEmbeddedAgent(
                 modelId: activeErrorContext.model,
                 modelApi: effectiveModel.api,
                 executionContract,
+                continuationActive: postToolContinuationRetryInstruction !== null,
                 aborted,
                 timedOut,
                 attempt,

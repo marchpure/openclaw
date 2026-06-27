@@ -890,6 +890,8 @@ const POST_TOOL_CONTINUATION_ACTION_RE =
   /\b(?:create|write|add|implement|build|update|finish|complete|test|verify|run|generate|prepare|wire|set up|start|continue)\b/i;
 const POST_TOOL_CONTINUATION_INTENT_RE =
   /(?:^\s*(?:(?:now|next|then|after(?:wards)?)[, ]+)?(?:let me|i(?:'ll| will| am going to|'m going to)|i need to|i can)\b|\blet me\b)/i;
+const POST_TOOL_CONTINUATION_PROGRESS_RE =
+  /\b(?:now|next|then|after(?:wards)?)[, ]+(?:creating|writing|adding|implementing|building|updating|finishing|completing|testing|verifying|running|generating|preparing|wiring|setting up|starting|continuing)\b/i;
 const POST_TOOL_TERSE_CONSTRUCTION_RE =
   /^\s*(?:now|next|then|after(?:wards)?)[, ]+the\s+\w+[\s\S]{0,120}\bwith\b/i;
 const POST_TOOL_COMPLETION_RE =
@@ -938,6 +940,7 @@ export function resolvePostToolContinuationRetryInstruction(params: {
   }
   const intentToContinue =
     POST_TOOL_TERSE_CONSTRUCTION_RE.test(text) ||
+    POST_TOOL_CONTINUATION_PROGRESS_RE.test(text) ||
     (POST_TOOL_CONTINUATION_INTENT_RE.test(text) && POST_TOOL_CONTINUATION_ACTION_RE.test(text));
   return intentToContinue ? POST_TOOL_CONTINUATION_RETRY_INSTRUCTION : null;
 }

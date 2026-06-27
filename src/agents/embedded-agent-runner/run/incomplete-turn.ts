@@ -69,7 +69,8 @@ type PlanningOnlyAttempt = Pick<
   | "messagingToolSentMediaUrls"
   | "messagingToolSentTargets"
   | "toolMetas"
->;
+> &
+  Partial<Pick<EmbeddedRunAttemptResult, "acceptedSessionSpawns">>;
 
 type SilentToolResultAttempt = Pick<
   EmbeddedRunAttemptResult,

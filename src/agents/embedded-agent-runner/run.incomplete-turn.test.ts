@@ -2993,6 +2993,36 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     ).toBe(POST_TOOL_CONTINUATION_RETRY_INSTRUCTION);
   });
 
+  it("continues post-tool leading progress announcements", () => {
+    const attempt = makeAttemptResult({
+      toolMetas: [{ toolName: "bash", meta: "python -m irp.cli import sample.log" }],
+      assistantTexts: ["Fixing the parser and building all deliverables now."],
+      lastAssistant: {
+        role: "assistant",
+        stopReason: "stop",
+        provider: "openai-codex",
+        model: "gpt-5.5",
+        content: [
+          {
+            type: "text",
+            text: "Fixing the parser and building all deliverables now.",
+          },
+        ],
+      } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+    });
+
+    expect(
+      resolvePostToolContinuationRetryInstruction({
+        provider: "openai-codex",
+        modelId: "gpt-5.5",
+        modelApi: "openai-codex-responses",
+        aborted: false,
+        timedOut: false,
+        attempt,
+      }),
+    ).toBe(POST_TOOL_CONTINUATION_RETRY_INSTRUCTION);
+  });
+
   it("does not continue post-tool final summaries", () => {
     const attempt = makeAttemptResult({
       toolMetas: [{ toolName: "bash", meta: "npm test" }],

@@ -893,7 +893,7 @@ const POST_TOOL_CONTINUATION_INTENT_RE =
 const POST_TOOL_CONTINUATION_PROGRESS_RE =
   /\b(?:now|next|then|after(?:wards)?)[, ]+(?:creating|writing|adding|implementing|building|updating|fixing|finishing|completing|testing|verifying|running|generating|preparing|wiring|setting up|starting|continuing)\b/i;
 const POST_TOOL_LEADING_PROGRESS_RE =
-  /^\s*(?:creating|writing|adding|implementing|building|updating|fixing|finishing|completing|testing|verifying|running|generating|preparing|wiring|setting up|starting|continuing)\b[\s\S]{0,180}\b(?:now|next|then|remaining|deliverables?|tests?|docs?|documentation|scripts?)\b/i;
+  /^\s*(?:creating|writing|adding|implementing|building|updating|fixing|finishing|completing|testing|verifying|running|generating|preparing|wiring|setting up|starting|continuing)\b[\s\S]{0,180}\b(?:now|next|then|remaining|deliverables?|logs?|tests?|docs?|documentation|scripts?)\b/i;
 const POST_TOOL_TERSE_CONSTRUCTION_RE =
   /^\s*(?:now|next|then|after(?:wards)?)[, ]+the\s+\w+[\s\S]{0,120}\bwith\b/i;
 const POST_TOOL_COMPLETION_RE =

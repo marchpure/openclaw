@@ -3106,6 +3106,38 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     ).toBe(POST_TOOL_CONTINUATION_RETRY_INSTRUCTION);
   });
 
+  it("continues active post-tool leading sample-log announcements", () => {
+    const attempt = makeAttemptResult({
+      assistantTexts: [
+        "Creating sample logs with realistic attack patterns mixed with normal traffic.",
+      ],
+      lastAssistant: {
+        role: "assistant",
+        stopReason: "stop",
+        provider: "openai-codex",
+        model: "gpt-5.5",
+        content: [
+          {
+            type: "text",
+            text: "Creating sample logs with realistic attack patterns mixed with normal traffic.",
+          },
+        ],
+      } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+    });
+
+    expect(
+      resolvePostToolContinuationRetryInstruction({
+        provider: "openai-codex",
+        modelId: "gpt-5.5",
+        modelApi: "openai-codex-responses",
+        continuationActive: true,
+        aborted: false,
+        timedOut: false,
+        attempt,
+      }),
+    ).toBe(POST_TOOL_CONTINUATION_RETRY_INSTRUCTION);
+  });
+
   it("does not continue post-tool final summaries", () => {
     const attempt = makeAttemptResult({
       toolMetas: [{ toolName: "bash", meta: "npm test" }],

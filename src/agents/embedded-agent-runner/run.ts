@@ -1143,6 +1143,7 @@ export async function runEmbeddedAgent(
       const maxPlanningOnlyRetryAttempts = resolvePlanningOnlyRetryLimit(executionContract);
       const maxReasoningOnlyRetryAttempts = DEFAULT_REASONING_ONLY_RETRY_LIMIT;
       const maxEmptyResponseRetryAttempts = DEFAULT_EMPTY_RESPONSE_RETRY_LIMIT;
+      const MAX_POST_TOOL_CONTINUATION_RETRIES = 4;
 
       const MAX_TIMEOUT_COMPACTION_ATTEMPTS = 2;
       const MAX_OVERFLOW_COMPACTION_ATTEMPTS = 3;
@@ -1164,6 +1165,7 @@ export async function runEmbeddedAgent(
       let runLoopIterations = 0;
       let overloadProfileRotations = 0;
       let planningOnlyRetryAttempts = 0;
+      let postToolContinuationRetryAttempts = 0;
       let reasoningOnlyRetryAttempts = 0;
       let emptyResponseRetryAttempts = 0;
       let compactionContinuationRetryAttempts = 0;
@@ -3142,14 +3144,14 @@ export async function runEmbeddedAgent(
           if (
             !nextPlanningOnlyRetryInstruction &&
             nextPostToolContinuationRetryInstruction &&
-            planningOnlyRetryAttempts < maxPlanningOnlyRetryAttempts
+            postToolContinuationRetryAttempts < MAX_POST_TOOL_CONTINUATION_RETRIES
           ) {
-            planningOnlyRetryAttempts += 1;
+            postToolContinuationRetryAttempts += 1;
             postToolContinuationRetryInstruction = nextPostToolContinuationRetryInstruction;
             log.warn(
               `post-tool progress-only assistant turn detected: runId=${params.runId} sessionId=${params.sessionId} ` +
                 `provider=${activeErrorContext.provider}/${activeErrorContext.model} harness=${sanitizeForLog(agentHarness.id)} — retrying ` +
-                `${planningOnlyRetryAttempts}/${maxPlanningOnlyRetryAttempts} with continuation steer`,
+                `${postToolContinuationRetryAttempts}/${MAX_POST_TOOL_CONTINUATION_RETRIES} with continuation steer`,
             );
             continue;
           }
@@ -3424,6 +3426,7 @@ export async function runEmbeddedAgent(
                 `hasCurrentAttemptAssistant=${attempt.currentAttemptAssistant ? "yes" : "no"} payloads=${payloadCount} ` +
                 `tools=${attempt.toolMetas?.length ?? 0} replaySafe=${replayMetadata.replaySafe ? "yes" : "no"} ` +
                 `compactions=${attemptCompactionCount} planningRetries=${planningOnlyRetryAttempts}/${maxPlanningOnlyRetryAttempts} ` +
+                `postToolContinuationRetries=${postToolContinuationRetryAttempts}/${MAX_POST_TOOL_CONTINUATION_RETRIES} ` +
                 `reasoningRetries=${reasoningOnlyRetryAttempts}/${maxReasoningOnlyRetryAttempts} ` +
                 `emptyRetries=${emptyResponseRetryAttempts}/${maxEmptyResponseRetryAttempts} ` +
                 `missingAssistantRetries=${missingAssistantRetryAttempts}/${MAX_MISSING_ASSISTANT_RETRIES} — surfacing error to user`,

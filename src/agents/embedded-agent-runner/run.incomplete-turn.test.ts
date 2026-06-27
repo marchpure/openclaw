@@ -815,6 +815,92 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     expectWarnMessageWith("post-tool progress-only assistant turn detected");
   });
 
+  it("keeps retrying repeated post-tool progress-only Codex turns independently from planning-only retries", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedResolveModelAsync.mockResolvedValue({
+      model: {
+        id: "gpt-5.5",
+        provider: "openai-codex",
+        contextWindow: 200000,
+        api: "openai-codex-responses",
+      },
+      error: null,
+      authStorage: {
+        setRuntimeApiKey: vi.fn(),
+      },
+      modelRegistry: {},
+    });
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        toolMetas: [{ toolName: "bash", meta: "cat > irp/parser.py" }],
+        assistantTexts: [
+          "Core code is functional. Now creating sample logs with realistic attack scenarios across all three formats.",
+        ],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "openai-codex",
+          model: "gpt-5.5",
+          content: [
+            {
+              type: "text",
+              text: "Core code is functional. Now creating sample logs with realistic attack scenarios across all three formats.",
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        toolMetas: [{ toolName: "bash", meta: "python -m irp.cli import sample.log" }],
+        assistantTexts: [
+          "The second pattern captures `T` in the regex but the format string uses a space. Let me fix the parser:",
+        ],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "openai-codex",
+          model: "gpt-5.5",
+          content: [
+            {
+              type: "text",
+              text: "The second pattern captures `T` in the regex but the format string uses a space. Let me fix the parser:",
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: ["Created the sample logs and completed the incident response package."],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "stop",
+          provider: "openai-codex",
+          model: "gpt-5.5",
+          content: [
+            {
+              type: "text",
+              text: "Created the sample logs and completed the incident response package.",
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    await runEmbeddedAgent({
+      ...overflowBaseRunParams,
+      provider: "openai-codex",
+      model: "gpt-5.5",
+      runId: "run-repeated-post-tool-progress-only-continuation",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(3);
+    expect(runAttemptCall(1).prompt).toContain(POST_TOOL_CONTINUATION_RETRY_INSTRUCTION);
+    expect(runAttemptCall(2).prompt).toContain(POST_TOOL_CONTINUATION_RETRY_INSTRUCTION);
+    expectWarnMessageWith("retrying 2/4 with continuation steer");
+  });
+
   it("retries replay-safe missing terminal assistant turns once with the same prompt", async () => {
     mockedClassifyFailoverReason.mockReturnValue(null);
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(
